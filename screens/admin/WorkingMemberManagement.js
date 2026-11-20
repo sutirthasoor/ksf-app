@@ -1,0 +1,8008 @@
+// screens/admin/WorkingMemberManagement.js
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TextInput,
+  TouchableOpacity,
+  Alert,
+  Modal,
+  Image,
+  ActivityIndicator,
+  RefreshControl,
+  FlatList,
+  Switch,
+  Dimensions,
+  Platform
+} from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
+import { db, getAuthInstance } from '../../config/firebase';
+import { 
+  createUserWithEmailAndPassword
+} from 'firebase/auth';
+import { 
+  collection, 
+  getDocs, 
+  updateDoc, 
+  doc, 
+  deleteDoc, 
+  query, 
+  where, 
+  orderBy, 
+  onSnapshot, 
+  getDoc, 
+  setDoc,
+  addDoc,
+  Timestamp,
+  runTransaction,
+  increment
+} from 'firebase/firestore';
+import { useNavigation } from '@react-navigation/native';
+import { Fonts } from '../../config/fonts';
+import { getLevelDetails, getLevelByMemberCount, LEVELS } from '../../config/commissionLevels';
+import { WalletService } from '../../services/WalletService';
+import { CommissionService } from '../../services/CommissionService';
+import { LevelUpdateService } from '../../services/LevelUpdateService';
+import ViewShot from 'react-native-view-shot';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
+import { Svg, Defs, Pattern, Rect, Image as SvgImage } from 'react-native-svg';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useLanguage } from '../../context/LanguageContext';
+
+const { width, height } = Dimensions.get('window');
+const isSmallDevice = width < 375;
+
+const FILTERS = ['All', 'Bronze', 'Silver', 'Gold', 'Platinum'];
+
+export default function WorkingMemberManagement() {
+  const { t, counter } = useLanguage();
+  const navigation = useNavigation();
+  
+  // Force re-render when language changes
+  const renderKey = `workingmembers-${counter}`;
+
+  // Get translations
+  const getTranslations = () => ({
+    workingMembers: t('workingMembers.title') || 'Working Members',
+    searchWorkingMembers: t('workingMembers.search') || 'Search working members...',
+    all: t('common.all') || 'All',
+    active: t('common.active') || 'Active',
+    pending: t('common.pending') || 'Pending',
+    suspended: t('workingMembers.suspended') || 'Suspended',
+    total: t('common.total') || 'Total',
+    noWorkingMembers: t('workingMembers.noWorkingMembers') || 'No working members found',
+    noWorkingMembersSubtext: t('workingMembers.noWorkingMembersSubtext') || 'Working members will appear here',
+    workingMemberDetails: t('workingMembers.details') || 'Working Member Details',
+    performance: t('workingMembers.performance') || 'Performance',
+    direct: t('workingMembers.direct') || 'Direct',
+    earned: t('workingMembers.earned') || 'Earned',
+    pendingCommission: t('workingMembers.pendingCommission') || 'Pending',
+    donations: t('workingMembers.donations') || 'Donations',
+    commissionRates: t('workingMembers.commissionRates') || 'Commission Rates',
+    directCommission: t('workingMembers.directCommission') || 'Direct:',
+    secondaryCommission: t('workingMembers.secondaryCommission') || 'Secondary:',
+    directMembers: t('workingMembers.directMembers') || 'Direct Members',
+    noDirectMembers: t('workingMembers.noDirectMembers') || 'No direct members yet',
+    status: t('common.status') || 'Status',
+    level: t('common.level') || 'Level',
+    nextLevel: t('workingMembers.nextLevel') || 'Next Level',
+    donationsReq: t('workingMembers.donationsReq') || 'Donations Req',
+    wallet: t('workingMembers.wallet') || 'Wallet',
+    promotion: t('workingMembers.promotion') || 'Promotion',
+    eligible: t('workingMembers.eligible') || '✅ Eligible',
+    moreNeeded: t('workingMembers.moreNeeded') || 'more',
+    close: t('common.close') || 'Close',
+    promoteWorkingMember: t('workingMembers.promoteWorkingMember') || 'Promote Working Member',
+    member: t('common.member') || 'Member',
+    currentLevel: t('workingMembers.currentLevel') || 'Current Level',
+    newLevel: t('workingMembers.newLevel') || 'New Level',
+    confirmPromotion: t('workingMembers.confirmPromotion') || 'Confirm Promotion',
+    addCommission: t('workingMembers.addCommission') || 'Add Commission',
+    amount: t('workingMembers.amount') || 'Amount',
+    type: t('common.type') || 'Type',
+    description: t('common.description') || 'Description',
+    add: t('common.add') || 'Add',
+    commissionHistory: t('workingMembers.commissionHistory') || 'Commission History',
+    noCommissionHistory: t('workingMembers.noCommissionHistory') || 'No commission history',
+    paid: t('workingMembers.paid') || 'Paid',
+    failed: t('workingMembers.failed') || 'Failed',
+    walletDetails: t('workingMembers.walletDetails') || 'Wallet Details',
+    availableBalance: t('workingMembers.availableBalance') || 'Available Balance',
+    withdrawn: t('workingMembers.withdrawn') || 'Withdrawn',
+    loadingWorkingMembers: t('workingMembers.loading') || 'Loading Working Members...',
+    approve: t('workingMembers.approve') || 'Approve',
+    suspend: t('workingMembers.suspend') || 'Suspend',
+    view: t('common.view') || 'View',
+    history: t('common.history') || 'History',
+    promote: t('workingMembers.promote') || 'Promote',
+    statusUpdated: t('workingMembers.statusUpdated') || 'Status updated to {status}',
+    promotionSuccess: t('workingMembers.promotionSuccess') || '{name} promoted to {level}',
+    commissionAdded: t('workingMembers.commissionAdded') || '₹{amount} Commission added for {name}',
+    error: t('common.error') || 'Error',
+    success: t('common.success') || 'Success',
+    cancel: t('common.cancel') || 'Cancel',
+    delete: t('common.delete') || 'Delete',
+    save: t('common.save') || 'Save',
+    nA: t('common.nA') || 'N/A',
+    max: t('workingMembers.max') || 'Max',
+    registered: t('workingMembers.registered') || 'Registered',
+    earning: t('workingMembers.earning') || 'Earning',
+    pendingCommissionLabel: t('workingMembers.pendingCommissionLabel') || 'Pending Comm.',
+    directComm: t('workingMembers.directComm') || 'Direct Comm.',
+    secondaryComm: t('workingMembers.secondaryComm') || 'Secondary Comm.',
+    role: t('common.role') || 'Role',
+    email: t('common.email') || 'Email',
+    phone: t('common.phone') || 'Phone',
+    joinDate: t('workingMembers.joinDate') || 'Join Date',
+  });
+
+  const translations = getTranslations();
+
+  const [workingMembers, setWorkingMembers] = useState([]);
+  const [filteredMembers, setFilteredMembers] = useState([]);
+  const [search, setSearch] = useState('');
+  const [assignModalVisible, setAssignModalVisible] = useState(false);
+  const [selectedMemberForAssign, setSelectedMemberForAssign] = useState(null);
+  const [availableSubMembers, setAvailableSubMembers] = useState([]);
+  const [selectedSubMemberId, setSelectedSubMemberId] = useState(null);
+  const [selectedSubMemberName, setSelectedSubMemberName] = useState('');
+  const [searchSubMember, setSearchSubMember] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [selectedMember, setSelectedMember] = useState(null);
+const [showPassword, setShowPassword] = useState(false);
+  const [memberHierarchy, setMemberHierarchy] = useState([]);
+  const [loadingHierarchy, setLoadingHierarchy] = useState(false);
+    // ===== Tree (upline + downline) =====
+  const [treeData, setTreeData] = useState({ upline: [], self: null, downline: [] });
+  const [treeLoading, setTreeLoading] = useState(false);
+
+  // ===== Per-node detail modal =====
+  const [nodeDetailVisible, setNodeDetailVisible] = useState(false);
+  const [nodeDetailLoading, setNodeDetailLoading] = useState(false);
+  const [nodeDetailData, setNodeDetailData] = useState(null);
+  const [nodeDetailCommission, setNodeDetailCommission] = useState({ total: 0, pending: 0, donation: 0 });
+  const [nodeDetailDonations, setNodeDetailDonations] = useState(0);
+  const [nodeDetailRegistered, setNodeDetailRegistered] = useState([]);
+  const [nodeDetailUpline, setNodeDetailUpline] = useState([]);
+  const [nodeDetailSearch, setNodeDetailSearch] = useState('');
+  // ===== Edit working member =====
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editingMember, setEditingMember] = useState(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editForm, setEditForm] = useState({
+    fullName: '', email: '', phone: '', gender: '', dob: '',
+    fatherName: '', motherName: '', aadharNumber: '', panNumber: '',
+    address: '', village: '', postOffice: '', thana: '', district: '',
+    state: '', pinCode: '', position: '', department: '', employeeId: '',
+    reportingTo: '', role: 'working', status: 'active', level: 'I',
+    profilePhoto: '', parentId: '', parentName: '',
+  });
+  // Refs for capturing views
+  const idCardRef = useRef(null);
+  const certificateRefs = useRef({});
+
+  // Download states
+  const [memberCertificates, setMemberCertificates] = useState([]);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadingCertId, setDownloadingCertId] = useState(null);
+  const [selectedMemberForDownload, setSelectedMemberForDownload] = useState(null);
+  const [downloadModalVisible, setDownloadModalVisible] = useState(false);
+
+  const isWeb = Platform.OS === 'web';
+  // Add these with your other state declarations
+  const [addMemberModalVisible, setAddMemberModalVisible] = useState(false);
+  const [dynamicLevels, setDynamicLevels] = useState([]);
+  const [newMemberData, setNewMemberData] = useState({
+    fullName: '',
+    email: '',
+    phone: '',
+    password: '',
+    address: '',
+    village: '',
+    postOffice: '',
+    thana: '',
+    district: '',
+    state: '',
+    pinCode: '',
+    gender: '',
+    dob: '',
+    aadharNumber: '',
+    level: 'I',
+    status: 'active',
+    role: 'working',
+    profilePhoto: null,
+    parentId: '',
+  });
+  const [savingMember, setSavingMember] = useState(false);
+  const [detailModalVisible, setDetailModalVisible] = useState(false);
+  const [filterStatus, setFilterStatus] = useState('all');
+// Add these with your other state declarations (around line 100-120)
+
+const [selectedNodeName, setSelectedNodeName] = useState('');
+const [nodeMembersModalVisible, setNodeMembersModalVisible] = useState(false);
+const [selectedNodeMembers, setSelectedNodeMembers] = useState({
+  memberDetails: null,
+  directMembers: []
+});
+const [loadingNodeMembers, setLoadingNodeMembers] = useState(false);
+  const [filterLevel, setFilterLevel] = useState('All');
+  const [parentMemberId, setParentMemberId] = useState(null);
+// Add this with your other state declarations
+const [loadingDirectMembers, setLoadingDirectMembers] = useState(false);
+  const [parentMemberName, setParentMemberName] = useState('');
+const [directMembersData, setDirectMembersData] = useState([]);
+  const [showParentSelector, setShowParentSelector] = useState(false);
+  const [availableParents, setAvailableParents] = useState([]);
+  const [searchParent, setSearchParent] = useState('');
+  const [registrationMethod, setRegistrationMethod] = useState('email');
+  const [showRegistrationMethodModal, setShowRegistrationMethodModal] = useState(false);
+  const [referralModalVisible, setReferralModalVisible] = useState(false);
+  const [selectedMemberForReferral, setSelectedMemberForReferral] = useState(null);
+  const [referralCode, setReferralCode] = useState('');
+  const [generatingReferral, setGeneratingReferral] = useState(false);
+  const [promotionModalVisible, setPromotionModalVisible] = useState(false);
+  const [commissionModalVisible, setCommissionModalVisible] = useState(false);
+  const [commissionHistoryModalVisible, setCommissionHistoryModalVisible] = useState(false);
+  const [commissionHistory, setCommissionHistory] = useState([]);
+  const [walletModalVisible, setWalletModalVisible] = useState(false);
+  const [selectedWallet, setSelectedWallet] = useState(null);
+  
+  const [promotionData, setPromotionData] = useState({
+    memberId: '',
+    memberName: '',
+    currentLevel: '',
+    newLevel: '',
+    commissionRate: ''
+  });
+  const [commissionData, setCommissionData] = useState({
+    memberId: '',
+    memberName: '',
+    amount: '',
+    type: 'direct',
+    description: '',
+    status: 'pending'
+  });
+const fetchDirectMembersData = async (memberIds) => {
+  setLoadingDirectMembers(true);
+  console.log('🔍 fetchDirectMembersData called with IDs:', memberIds);
+  
+  if (!memberIds || memberIds.length === 0) {
+    console.log('❌ No member IDs provided');
+    setDirectMembersData([]);
+    setLoadingDirectMembers(false);
+    return;
+  }
+  
+  try {
+    const members = [];
+    for (const id of memberIds) {
+      console.log(`🔍 Fetching member with ID: ${id}`);
+      const docRef = doc(db, 'users', id);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        // Only add if NOT a working member
+        if (data.role !== 'working' && data.role !== 'workingMember') {
+          console.log(`✅ Found member: ${data.fullName || 'Unknown'}`, data);
+          members.push({ id, ...data });
+        } else {
+          console.log(`⏭️ Skipping working member: ${data.fullName}`);
+        }
+      } else {
+        console.log(`❌ No member found with ID: ${id}`);
+        // Try to find in workingMembers as fallback
+        const found = workingMembers.find(m => m.id === id);
+        if (found) {
+          // Only add if NOT a working member
+          if (found.role !== 'working' && found.role !== 'workingMember') {
+            console.log(`✅ Found in workingMembers: ${found.fullName}`);
+            members.push(found);
+          }
+        }
+      }
+    }
+    console.log(`📊 Total members fetched: ${members.length}`);
+    setDirectMembersData(members);
+  } catch (error) {
+    console.error('❌ Error fetching direct members:', error);
+  } finally {
+    setLoadingDirectMembers(false);
+  }
+};
+  useEffect(() => {
+    fetchDynamicLevels();
+    setupRealtimeListener();
+  }, []);
+
+  // ============ FETCH HIERARCHY FUNCTION ============
+  const fetchMemberHierarchy = async (memberId) => {
+    try {
+      const hierarchy = [];
+      const visited = new Set();
+      
+      // Start with the current member
+      const memberRef = doc(db, 'users', memberId);
+      const memberDoc = await getDoc(memberRef);
+      
+      if (!memberDoc.exists()) {
+        return [];
+      }
+      
+      const memberData = memberDoc.data();
+      const rootMember = {
+        id: memberId,
+        fullName: memberData.fullName || 'Unknown',
+        level: memberData.level,
+        levelName: getLevelLabel(memberData.level),
+        isCurrent: true,
+        phone: memberData.phone || '',
+        email: memberData.email || '',
+        status: memberData.status || 'inactive',
+        childrenIds: memberData.childrenIds || [],
+        depth: 0,
+        parentId: memberData.parentId || null
+      };
+      
+      hierarchy.push(rootMember);
+      visited.add(memberId);
+      
+      // Recursively fetch children (downline)
+      const fetchChildren = async (parentId, depth) => {
+        const q = query(
+          collection(db, 'users'),
+          where('parentId', '==', parentId),
+          where('role', 'in', ['working', 'workingMember'])
+        );
+        const snapshot = await getDocs(q);
+        
+        const children = [];
+        for (const doc of snapshot.docs) {
+          const data = doc.data();
+          if (!visited.has(doc.id)) {
+            const child = {
+              id: doc.id,
+              fullName: data.fullName || 'Unknown',
+              level: data.level,
+              levelName: getLevelLabel(data.level),
+              isCurrent: false,
+              phone: data.phone || '',
+              email: data.email || '',
+              status: data.status || 'inactive',
+              childrenIds: data.childrenIds || [],
+              depth: depth + 1,
+              parentId: parentId
+            };
+            children.push(child);
+            visited.add(doc.id);
+          }
+        }
+        
+        // Sort children by level (lower level first)
+        const levelsToUse = dynamicLevels.length > 0 ? dynamicLevels : getDefaultLevels();
+        children.sort((a, b) => {
+          const aIndex = levelsToUse.findIndex(l => l.id === a.level);
+          const bIndex = levelsToUse.findIndex(l => l.id === b.level);
+          return aIndex - bIndex;
+        });
+        
+        // Add children and recursively fetch their children
+        for (const child of children) {
+          hierarchy.push(child);
+          await fetchChildren(child.id, child.depth);
+        }
+      };
+      
+      await fetchChildren(memberId, 0);
+      
+      // Sort by depth
+      hierarchy.sort((a, b) => {
+        if (a.isCurrent) return -1;
+        if (b.isCurrent) return 1;
+        return (a.depth || 0) - (b.depth || 0);
+      });
+      
+      return hierarchy;
+      
+    } catch (error) {
+      console.error('Error fetching hierarchy:', error);
+      return [];
+    }
+  };
+
+  // ============ LOAD HIERARCHY FUNCTION ============
+  // ============ LOAD HIERARCHY FUNCTION (ENHANCED) ============
+// ============ LOAD HIERARCHY FUNCTION (FIXED) ============
+// ============ LOAD HIERARCHY FUNCTION (FIXED) ============
+  const loadMemberTree = async (member) => {
+    setTreeLoading(true);
+    try {
+      const levelsToUse = dynamicLevels.length > 0 ? dynamicLevels : getDefaultLevels();
+
+      // --- UPLINE (walk parentId upward) ---
+      const upline = [];
+      let cur = member.parentId || null;
+      let safety = 0;
+      while (cur && safety < 50) {
+        safety++;
+        const snap = await getDoc(doc(db, 'users', cur));
+        if (!snap.exists()) break;
+        const d = snap.data();
+        upline.push({
+          id: cur, ...d,
+          levelName: getLevelLabel(d.level, levelsToUse),
+          levelColor: getLevelColor(d.level),
+        });
+        cur = d.parentId || null;
+      }
+      upline.reverse();
+
+      // --- DOWNLINE (recursive) ---
+      const visited = new Set([member.id]);
+      const buildChildren = async (parentId, depth = 0) => {
+        if (depth > 10) return [];
+        try {
+          const snap = await getDocs(
+            query(
+              collection(db, 'users'),
+              where('parentId', '==', parentId),
+              where('role', 'in', ['working', 'workingMember'])
+            )
+          );
+          const children = [];
+          for (const childDoc of snap.docs) {
+            if (visited.has(childDoc.id)) continue;
+            visited.add(childDoc.id);
+            const cd = childDoc.data();
+
+            let registeredCount = 0;
+            try {
+              const regSnap = await getDocs(
+                query(collection(db, 'users'), where('registeredBy', '==', childDoc.id))
+              );
+              regSnap.forEach(r => {
+                const rd = r.data();
+                if (rd.role !== 'working' && rd.role !== 'workingMember') registeredCount++;
+              });
+            } catch (_) {}
+
+            children.push({
+              id: childDoc.id, ...cd,
+              levelName: getLevelLabel(cd.level, levelsToUse),
+              levelColor: getLevelColor(cd.level),
+              depth: depth + 1,
+              registeredCount,
+              children: await buildChildren(childDoc.id, depth + 1),
+            });
+          }
+          return children;
+        } catch (e) {
+          console.warn('buildChildren:', e);
+          return [];
+        }
+      };
+
+      const downline = await buildChildren(member.id, 0);
+
+      // --- Self registered members ---
+      const selfRegistered = [];
+      try {
+        const regSnap = await getDocs(
+          query(collection(db, 'users'), where('registeredBy', '==', member.id))
+        );
+        regSnap.forEach(r => {
+          const rd = r.data();
+          if (rd.role !== 'working' && rd.role !== 'workingMember') {
+            selfRegistered.push({ id: r.id, ...rd });
+          }
+        });
+      } catch (_) {}
+
+      const selfNode = {
+        ...member,
+        levelName: getLevelLabel(member.level, levelsToUse),
+        levelColor: getLevelColor(member.level),
+        registeredCount: selfRegistered.length,
+        children: downline,
+      };
+
+      setTreeData({ upline, self: selfNode, downline });
+    } catch (e) {
+      console.error('loadMemberTree:', e);
+      setTreeData({ upline: [], self: member, downline: [] });
+    } finally {
+      setTreeLoading(false);
+    }
+  };
+  const openNodeDetail = async (node) => {
+    setNodeDetailVisible(true);
+    setNodeDetailLoading(true);
+    setNodeDetailData(node);
+    setNodeDetailCommission({ total: 0, pending: 0, donation: 0 });
+    setNodeDetailDonations(0);
+    setNodeDetailRegistered([]);
+    setNodeDetailUpline([]);
+    setNodeDetailSearch('');
+
+    try {
+      // Upline
+      const upline = [];
+      let cur = node.parentId || null;
+      let safety = 0;
+      while (cur && safety < 50) {
+        safety++;
+        const snap = await getDoc(doc(db, 'users', cur));
+        if (!snap.exists()) break;
+        const d = snap.data();
+        upline.push({ id: cur, ...d });
+        cur = d.parentId || null;
+      }
+      upline.reverse();
+      setNodeDetailUpline(upline);
+
+      // Registered members
+      try {
+        const regSnap = await getDocs(
+          query(collection(db, 'users'), where('registeredBy', '==', node.id))
+        );
+        const regList = [];
+        regSnap.forEach(r => {
+          const rd = r.data();
+          if (rd.role !== 'working' && rd.role !== 'workingMember') {
+            regList.push({ id: r.id, ...rd });
+          }
+        });
+        setNodeDetailRegistered(regList);
+      } catch (_) {}
+
+      // Commission
+      let total = 0, pending = 0, donation = 0;
+      try {
+        const commSnap = await getDocs(
+          query(collection(db, 'walletTransactions'), where('userId', '==', node.id))
+        );
+        commSnap.forEach(c => {
+          const d = c.data();
+          const t = d.type || '';
+          const isComm =
+            t.includes('commission') || t === 'direct_commission' ||
+            t === 'secondary_commission' || t === 'primary_commission';
+          if (!isComm) return;
+          if (d.status === 'paid' || d.status === 'completed') {
+            total += d.amount || 0;
+            if ((d.description || '').toLowerCase().includes('donation')) donation += d.amount || 0;
+          } else if (d.status === 'pending') {
+            pending += d.amount || 0;
+          }
+        });
+      } catch (_) {}
+      setNodeDetailCommission({ total, pending, donation });
+
+      // Donations made
+      try {
+        const donSnap = await getDocs(
+          query(collection(db, 'donations'), where('memberId', '==', node.id))
+        );
+        let t = 0;
+        donSnap.forEach(dd => { t += dd.data().amount || 0; });
+        setNodeDetailDonations(t);
+      } catch (_) {}
+    } catch (e) {
+      console.error('openNodeDetail:', e);
+    } finally {
+      setNodeDetailLoading(false);
+    }
+  };
+  // ================================================================
+  // EDIT: open + save
+  // ================================================================
+  const openEditMember = (member) => {
+    setEditingMember(member);
+    setEditForm({
+      fullName: member.fullName || '',
+      email: member.email || '',
+      phone: member.phone || '',
+      gender: member.gender || '',
+      dob: member.dob || '',
+      fatherName: member.fatherName || '',
+      motherName: member.motherName || '',
+      aadharNumber: member.aadharNumber || '',
+      panNumber: member.panNumber || '',
+      address: member.address || '',
+      village: member.village || '',
+      postOffice: member.postOffice || '',
+      thana: member.thana || '',
+      district: member.district || '',
+      state: member.state || '',
+      pinCode: member.pinCode || '',
+      position: member.position || '',
+      department: member.department || '',
+      employeeId: member.employeeId || '',
+      reportingTo: member.reportingTo || '',
+      role: member.role || 'working',
+      status: member.status || 'active',
+      level: member.level || 'I',
+      profilePhoto: member.profilePhoto || '',
+      parentId: member.parentId || '',
+      parentName: member.parentName || '',
+    });
+    setEditModalVisible(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingMember) return;
+    if (!editForm.fullName.trim()) {
+      Alert.alert('Validation', 'Full name is required');
+      return;
+    }
+    if (!editForm.email.trim()) {
+      Alert.alert('Validation', 'Email is required');
+      return;
+    }
+
+    setSavingEdit(true);
+    try {
+      // Look up new level's commission rates if level changed
+      const levelsToUse = dynamicLevels.length > 0 ? dynamicLevels : getDefaultLevels();
+      const newLevelData = levelsToUse.find(l => l.id === editForm.level);
+
+      const payload = {
+        fullName: editForm.fullName.trim(),
+        email: editForm.email.trim().toLowerCase(),
+        phone: editForm.phone.trim(),
+        gender: editForm.gender,
+        dob: editForm.dob,
+        fatherName: editForm.fatherName.trim(),
+        motherName: editForm.motherName.trim(),
+        aadharNumber: editForm.aadharNumber.trim(),
+        panNumber: editForm.panNumber.trim(),
+        address: editForm.address.trim(),
+        village: editForm.village.trim(),
+        postOffice: editForm.postOffice.trim(),
+        thana: editForm.thana.trim(),
+        district: editForm.district.trim(),
+        state: editForm.state.trim(),
+        pinCode: editForm.pinCode.trim(),
+        position: editForm.position.trim(),
+        department: editForm.department.trim(),
+        employeeId: editForm.employeeId.trim(),
+        reportingTo: editForm.reportingTo.trim(),
+        role: editForm.role,
+        status: editForm.status,
+        level: editForm.level,
+        profilePhoto: editForm.profilePhoto,
+        parentId: editForm.parentId || null,
+        parentName: editForm.parentName || null,
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (newLevelData) {
+        payload.directCommission = newLevelData.directCommission || 0;
+        payload.secondaryCommission = newLevelData.secondaryCommission || 0;
+      }
+
+      // Write to users/{uid}
+      await updateDoc(doc(db, 'users', editingMember.id), payload);
+
+      // Keep registeredMembers in sync if this doc exists
+      try {
+        const rmSnap = await getDocs(
+          query(collection(db, 'registeredMembers'), where('memberId', '==', editingMember.id))
+        );
+        if (!rmSnap.empty) {
+          await updateDoc(doc(db, 'registeredMembers', rmSnap.docs[0].id), {
+            fullName: payload.fullName,
+            email: payload.email,
+            phone: payload.phone,
+            address: payload.address,
+            gender: payload.gender,
+            dob: payload.dob,
+            updatedAt: payload.updatedAt,
+          });
+        }
+      } catch (e) {
+        console.warn('registeredMembers sync skipped:', e);
+      }
+
+      Alert.alert('Success', 'Working member updated successfully');
+      setEditModalVisible(false);
+      setEditingMember(null);
+
+      // Update the detail modal in place if it was showing this member
+      if (selectedMember?.id === editingMember.id) {
+        setSelectedMember({ ...selectedMember, ...payload });
+      }
+    } catch (e) {
+      console.error('handleSaveEdit:', e);
+      Alert.alert('Error', e.message || 'Failed to save');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+  // ============ FETCH AVAILABLE SUB-MEMBERS (ONLY EXACTLY ONE LEVEL BELOW) ============
+  const fetchAvailableSubMembers = async (parentLevel) => {
+  if (!parentLevel) return;
+  
+  try {
+    console.log('🔍 Fetching available sub-members for parent level:', parentLevel);
+    
+    const levelsToUse = dynamicLevels.length > 0 ? dynamicLevels : getDefaultLevels();
+    const parentLevelIndex = levelsToUse.findIndex(l => l.id === parentLevel);
+    
+    // Get ALL levels below the parent (not just exactly one level below)
+    const subLevels = levelsToUse.filter((l, index) => index < parentLevelIndex);
+    const subLevelIds = subLevels.map(l => l.id);
+    
+    console.log('📋 Sub levels to search:', subLevelIds);
+    
+    if (subLevelIds.length === 0) {
+      console.log('❌ No lower levels available');
+      setAvailableSubMembers([]);
+      return;
+    }
+    
+    // Get all working members with levels below the parent
+    const q = query(
+      collection(db, 'users'),
+      where('role', 'in', ['working', 'workingMember']),
+      where('status', '==', 'active')
+    );
+    const snapshot = await getDocs(q);
+    const subMembers = [];
+    
+    snapshot.forEach((doc) => {
+      const data = doc.data();
+      const memberLevel = data.level || 'I';
+      
+      // Check if this member's level is below the parent
+      if (subLevelIds.includes(memberLevel)) {
+        // Only show members without a parent (or with null parent)
+        if (!data.parentId || data.parentId === '') {
+          // Also check if this member is already assigned to someone else
+          const isAlreadyAssigned = workingMembers.some(m => 
+            m.id === doc.id && m.parentId && m.parentId !== ''
+          );
+          
+          if (!isAlreadyAssigned) {
+            subMembers.push({
+              id: doc.id,
+              fullName: data.fullName || data.name || 'Unknown',
+              level: data.level,
+              levelName: getLevelLabel(data.level),
+              phone: data.phone || '',
+              email: data.email || '',
+              parentId: data.parentId || null
+            });
+          }
+        }
+      }
+    });
+    
+    console.log('✅ Found available sub-members:', subMembers.length);
+    setAvailableSubMembers(subMembers);
+    
+  } catch (error) {
+    console.error('Error fetching sub-members:', error);
+    setAvailableSubMembers([]);
+  }
+};
+
+  const fetchDynamicLevels = async () => {
+    try {
+      const settingsRef = doc(db, 'settings', 'commission');
+      const settingsSnap = await getDoc(settingsRef);
+      if (settingsSnap.exists()) {
+        const settingsData = settingsSnap.data();
+        if (settingsData.levels) {
+          setDynamicLevels(settingsData.levels);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching dynamic levels:', error);
+    }
+  };
+
+  const fetchMemberCertificates = async (memberId) => {
+    try {
+      const certQuery = query(
+        collection(db, 'certificates'),
+        where('memberId', '==', memberId),
+        where('status', '==', 'issued')
+      );
+      const certSnap = await getDocs(certQuery);
+      const certList = [];
+      certSnap.forEach((doc) => {
+        certList.push({ id: doc.id, ...doc.data() });
+      });
+      setMemberCertificates(certList);
+    } catch (error) {
+      console.error('Error fetching certificates:', error);
+      setMemberCertificates([]);
+    }
+  };
+
+  const fetchAvailableParents = async (selectedLevel) => {
+    if (!selectedLevel) return;
+    
+    try {
+      const levelsToUse = dynamicLevels.length > 0 ? dynamicLevels : getDefaultLevels();
+      const selectedLevelIndex = levelsToUse.findIndex(l => l.id === selectedLevel);
+      
+      const parentLevels = levelsToUse.filter((l, index) => index > selectedLevelIndex);
+      const parentLevelIds = parentLevels.map(l => l.id);
+      
+      if (parentLevelIds.length === 0) {
+        setAvailableParents([]);
+        return;
+      }
+      
+      const q = query(
+        collection(db, 'users'),
+        where('role', 'in', ['working', 'workingMember']),
+        where('status', '==', 'active')
+      );
+      const snapshot = await getDocs(q);
+      const parents = [];
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        if (parentLevelIds.includes(data.level)) {
+          parents.push({
+            id: doc.id,
+            fullName: data.fullName || data.name || 'Unknown',
+            level: data.level,
+            levelName: getLevelLabel(data.level),
+            phone: data.phone || '',
+            email: data.email || '',
+          });
+        }
+      });
+      setAvailableParents(parents);
+    } catch (error) {
+      console.error('Error fetching parents:', error);
+    }
+  };
+
+  const generateReferralCode = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code = '';
+    for (let i = 0; i < 8; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
+  };
+
+  const handleGenerateReferral = async () => {
+    if (!selectedMemberForReferral) return;
+    
+    setGeneratingReferral(true);
+    try {
+      const newCode = generateReferralCode();
+      setReferralCode(newCode);
+      
+      await updateDoc(doc(db, 'users', selectedMemberForReferral.id), {
+        referralCode: newCode,
+        referralCodeGeneratedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+      
+      Alert.alert(
+        'Success', 
+        `Referral code generated for ${selectedMemberForReferral.fullName}\n\nCode: ${newCode}`
+      );
+      
+      onRefresh();
+      
+    } catch (error) {
+      console.error('Error generating referral code:', error);
+      Alert.alert('Error', 'Failed to generate referral code. Please try again.');
+    } finally {
+      setGeneratingReferral(false);
+    }
+  };
+
+  // ============ DOWNLOAD FUNCTIONS ============
+const fetchNodeDirectMembers = async (nodeId, nodeName) => {
+  console.log('🔍 fetchNodeDirectMembers called for:', nodeName, 'ID:', nodeId);
+  setLoadingNodeMembers(true);
+  setSelectedNodeName(nodeName || 'Member');
+  
+  try {
+    // FIRST: Try to find the member in workingMembers array (most complete data)
+    const memberFromList = workingMembers.find(m => m.id === nodeId);
+    
+    if (memberFromList) {
+      console.log('✅ Found in workingMembers:', memberFromList.fullName);
+      console.log('📧 Email from workingMembers:', memberFromList.email);
+      console.log('📱 Phone from workingMembers:', memberFromList.phone);
+      console.log('📋 Full data:', memberFromList);
+      
+      // Use the data from workingMembers directly - this has ALL fields
+      const fullDetails = {
+        id: memberFromList.id,
+        fullName: memberFromList.fullName || nodeName || 'Unknown',
+        email: memberFromList.email || 'Not provided',
+        phone: memberFromList.phone || 'Not provided',
+        address: memberFromList.address || 'Not provided',
+        fatherName: memberFromList.fatherName || 'Not provided',
+        dob: memberFromList.dob || 'Not provided',
+        aadharNumber: memberFromList.aadharNumber || 'Not provided',
+        gender: memberFromList.gender || 'Not provided',
+        village: memberFromList.village || 'Not provided',
+        postOffice: memberFromList.postOffice || 'Not provided',
+        thana: memberFromList.thana || 'Not provided',
+        district: memberFromList.district || 'Not provided',
+        state: memberFromList.state || 'Not provided',
+        pinCode: memberFromList.pinCode || 'Not provided',
+        membershipStatus: memberFromList.status || 'active',
+        bio: memberFromList.bio || 'NGO Member',
+        department: memberFromList.department || 'Not assigned',
+        position: memberFromList.position || 'Member',
+        employeeId: memberFromList.employeeId || `MBR-${nodeId.slice(0, 6).toUpperCase()}`,
+        reportingTo: memberFromList.reportingTo || 'Not provided',
+        joinedDate: memberFromList.joinedDate || memberFromList.createdAt || 'Not provided',
+        level: memberFromList.level || 'I',
+        levelName: getLevelLabel(memberFromList.level || 'I'),
+        status: memberFromList.status || 'active',
+        totalEarned: memberFromList.totalEarned || 0,
+        pendingCommission: memberFromList.pendingCommission || 0,
+        directReferralCount: memberFromList.directReferralCount || 0,
+        walletBalance: memberFromList.walletBalance || 0,
+        totalDonations: memberFromList.totalDonations || 0,
+        promotionEligible: memberFromList.promotionEligible || false,
+        directCommission: memberFromList.directCommission || 0,
+        secondaryCommission: memberFromList.secondaryCommission || 0,
+        donationsRequired: memberFromList.donationsRequired || 0,
+        membersNeededForPromotion: memberFromList.membersNeededForPromotion || 0,
+        nextLevel: memberFromList.nextLevel || null,
+        profilePhoto: memberFromList.profilePhoto || null,
+        registeredMembersList: memberFromList.registeredMembersList || [],
+        parentId: memberFromList.parentId || null,
+        parentName: memberFromList.parentName || null,
+        createdAt: memberFromList.createdAt || 'Not provided',
+        updatedAt: memberFromList.updatedAt || 'Not provided'
+      };
+      
+      // Filter direct members (non-working)
+      const directMembers = (fullDetails.registeredMembersList || []).filter(
+        m => m.role !== 'working' && m.role !== 'workingMember'
+      );
+      
+      console.log('✅ Using workingMembers data - email:', fullDetails.email, 'phone:', fullDetails.phone);
+      console.log('✅ Direct members count:', directMembers.length);
+      
+      setSelectedNodeMembers({
+        memberDetails: fullDetails,
+        directMembers: directMembers
+      });
+      setNodeMembersModalVisible(true);
+      setLoadingNodeMembers(false);
+      return;
+    }
+    
+    // SECOND: If not in workingMembers, try Firestore directly
+    console.log('📡 Not in workingMembers, fetching from Firestore...');
+    const memberRef = doc(db, 'users', nodeId);
+    const memberDoc = await getDoc(memberRef);
+    
+    if (memberDoc.exists()) {
+      const data = memberDoc.data();
+      console.log('📋 User data from Firestore:', data);
+      console.log('📧 Email from Firestore:', data.email);
+      console.log('📱 Phone from Firestore:', data.phone);
+      
+      const fullDetails = {
+        id: nodeId,
+        fullName: data.fullName || data.name || nodeName || 'Unknown',
+        email: data.email || 'Not provided',
+        phone: data.phone || 'Not provided',
+        address: data.address || 'Not provided',
+        fatherName: data.fatherName || 'Not provided',
+        dob: data.dob || 'Not provided',
+        aadharNumber: data.aadharNumber || 'Not provided',
+        gender: data.gender || 'Not provided',
+        village: data.village || 'Not provided',
+        postOffice: data.postOffice || 'Not provided',
+        thana: data.thana || 'Not provided',
+        district: data.district || 'Not provided',
+        state: data.state || 'Not provided',
+        pinCode: data.pinCode || 'Not provided',
+        membershipStatus: data.membershipStatus || data.status || 'active',
+        bio: data.bio || 'NGO Member',
+        department: data.department || 'Not assigned',
+        position: data.position || 'Member',
+        employeeId: data.employeeId || `MBR-${nodeId.slice(0, 6).toUpperCase()}`,
+        reportingTo: data.reportingTo || 'Not provided',
+        joinedDate: data.createdAt ? 
+          (data.createdAt.seconds ? new Date(data.createdAt.seconds * 1000).toLocaleDateString() : data.createdAt) 
+          : 'Not provided',
+        level: data.level || 'I',
+        levelName: getLevelLabel(data.level || 'I'),
+        status: data.status || 'active',
+        totalEarned: data.totalEarned || 0,
+        pendingCommission: data.pendingCommission || 0,
+        directReferralCount: data.directReferralCount || 0,
+        walletBalance: data.walletBalance || 0,
+        totalDonations: data.totalDonations || 0,
+        promotionEligible: data.promotionEligible || false,
+        directCommission: data.directCommission || 0,
+        secondaryCommission: data.secondaryCommission || 0,
+        donationsRequired: data.donationsRequired || 0,
+        membersNeededForPromotion: data.membersNeededForPromotion || 0,
+        nextLevel: data.nextLevel || null,
+        profilePhoto: data.profilePhoto || null,
+        registeredMembersList: [],
+        parentId: data.parentId || null,
+        parentName: data.parentName || null,
+        createdAt: data.createdAt || 'Not provided',
+        updatedAt: data.updatedAt || 'Not provided'
+      };
+      
+      // Query registered members
+      const registeredQuery = query(
+        collection(db, 'users'),
+        where('registeredBy', '==', nodeId)
+      );
+      const registeredSnap = await getDocs(registeredQuery);
+      const directMembers = [];
+      registeredSnap.forEach((regDoc) => {
+        const regData = regDoc.data();
+        if (regData.role !== 'working' && regData.role !== 'workingMember') {
+          directMembers.push({ id: regDoc.id, ...regData });
+        }
+      });
+      
+      fullDetails.directReferralCount = directMembers.length;
+      fullDetails.registeredMembersList = directMembers;
+      
+      console.log('✅ Using Firestore data - email:', fullDetails.email, 'phone:', fullDetails.phone);
+      
+      setSelectedNodeMembers({
+        memberDetails: fullDetails,
+        directMembers: directMembers
+      });
+      setNodeMembersModalVisible(true);
+      setLoadingNodeMembers(false);
+      return;
+    }
+    
+    // THIRD: Try to find in workingMembers by parentId match (if this is a child)
+    const childMember = workingMembers.find(m => m.parentId === nodeId);
+    if (childMember) {
+      console.log('✅ Found child member with parentId match:', childMember.fullName);
+      // This means the node is a parent, so we need to find the parent in workingMembers
+      const parentFromList = workingMembers.find(m => m.id === nodeId);
+      if (parentFromList) {
+        console.log('✅ Found parent in workingMembers:', parentFromList.fullName);
+        // Recurse with the parent data
+        const fullDetails = {
+          id: parentFromList.id,
+          fullName: parentFromList.fullName || nodeName || 'Unknown',
+          email: parentFromList.email || 'Not provided',
+          phone: parentFromList.phone || 'Not provided',
+          address: parentFromList.address || 'Not provided',
+          fatherName: parentFromList.fatherName || 'Not provided',
+          dob: parentFromList.dob || 'Not provided',
+          aadharNumber: parentFromList.aadharNumber || 'Not provided',
+          gender: parentFromList.gender || 'Not provided',
+          village: parentFromList.village || 'Not provided',
+          postOffice: parentFromList.postOffice || 'Not provided',
+          thana: parentFromList.thana || 'Not provided',
+          district: parentFromList.district || 'Not provided',
+          state: parentFromList.state || 'Not provided',
+          pinCode: parentFromList.pinCode || 'Not provided',
+          membershipStatus: parentFromList.status || 'active',
+          bio: parentFromList.bio || 'NGO Member',
+          department: parentFromList.department || 'Not assigned',
+          position: parentFromList.position || 'Member',
+          employeeId: parentFromList.employeeId || `MBR-${nodeId.slice(0, 6).toUpperCase()}`,
+          reportingTo: parentFromList.reportingTo || 'Not provided',
+          joinedDate: parentFromList.joinedDate || parentFromList.createdAt || 'Not provided',
+          level: parentFromList.level || 'I',
+          levelName: getLevelLabel(parentFromList.level || 'I'),
+          status: parentFromList.status || 'active',
+          totalEarned: parentFromList.totalEarned || 0,
+          pendingCommission: parentFromList.pendingCommission || 0,
+          directReferralCount: parentFromList.directReferralCount || 0,
+          walletBalance: parentFromList.walletBalance || 0,
+          totalDonations: parentFromList.totalDonations || 0,
+          promotionEligible: parentFromList.promotionEligible || false,
+          directCommission: parentFromList.directCommission || 0,
+          secondaryCommission: parentFromList.secondaryCommission || 0,
+          donationsRequired: parentFromList.donationsRequired || 0,
+          membersNeededForPromotion: parentFromList.membersNeededForPromotion || 0,
+          nextLevel: parentFromList.nextLevel || null,
+          profilePhoto: parentFromList.profilePhoto || null,
+          registeredMembersList: parentFromList.registeredMembersList || [],
+          parentId: parentFromList.parentId || null,
+          parentName: parentFromList.parentName || null,
+          createdAt: parentFromList.createdAt || 'Not provided',
+          updatedAt: parentFromList.updatedAt || 'Not provided'
+        };
+        
+        const directMembers = (fullDetails.registeredMembersList || []).filter(
+          m => m.role !== 'working' && m.role !== 'workingMember'
+        );
+        
+        setSelectedNodeMembers({
+          memberDetails: fullDetails,
+          directMembers: directMembers
+        });
+        setNodeMembersModalVisible(true);
+        setLoadingNodeMembers(false);
+        return;
+      }
+    }
+    
+    // FOURTH: Fallback to hierarchy data with enhanced field extraction
+    const memberFromHierarchy = memberHierarchy.find(m => m.id === nodeId);
+    if (memberFromHierarchy) {
+      console.log('✅ Found in hierarchy:', memberFromHierarchy.fullName);
+      
+      // Try to get more complete data from workingMembers
+      const enrichedMember = workingMembers.find(m => m.id === nodeId);
+      
+      const directMembers = (memberFromHierarchy.registeredMembersList || []).filter(
+        m => m.role !== 'working' && m.role !== 'workingMember'
+      );
+      
+      // Use enriched data if available, otherwise use hierarchy data
+      const email = enrichedMember?.email || memberFromHierarchy.email || 'Not provided';
+      const phone = enrichedMember?.phone || memberFromHierarchy.phone || 'Not provided';
+      const address = enrichedMember?.address || memberFromHierarchy.address || 'Not provided';
+      const fatherName = enrichedMember?.fatherName || memberFromHierarchy.fatherName || 'Not provided';
+      const dob = enrichedMember?.dob || memberFromHierarchy.dob || 'Not provided';
+      const aadharNumber = enrichedMember?.aadharNumber || memberFromHierarchy.aadharNumber || 'Not provided';
+      const gender = enrichedMember?.gender || memberFromHierarchy.gender || 'Not provided';
+      const state = enrichedMember?.state || memberFromHierarchy.state || 'Not provided';
+      const pinCode = enrichedMember?.pinCode || memberFromHierarchy.pinCode || 'Not provided';
+      
+      console.log('📧 Final email:', email);
+      console.log('📱 Final phone:', phone);
+      
+      setSelectedNodeMembers({
+        memberDetails: {
+          id: memberFromHierarchy.id,
+          fullName: memberFromHierarchy.fullName || nodeName || 'Unknown',
+          email: email,
+          phone: phone,
+          address: address,
+          fatherName: fatherName,
+          dob: dob,
+          aadharNumber: aadharNumber,
+          gender: gender,
+          village: enrichedMember?.village || memberFromHierarchy.village || 'Not provided',
+          postOffice: enrichedMember?.postOffice || memberFromHierarchy.postOffice || 'Not provided',
+          thana: enrichedMember?.thana || memberFromHierarchy.thana || 'Not provided',
+          district: enrichedMember?.district || memberFromHierarchy.district || 'Not provided',
+          state: state,
+          pinCode: pinCode,
+          membershipStatus: memberFromHierarchy.status || 'active',
+          bio: enrichedMember?.bio || memberFromHierarchy.bio || 'NGO Member',
+          department: enrichedMember?.department || memberFromHierarchy.department || 'Not assigned',
+          position: enrichedMember?.position || memberFromHierarchy.position || 'Member',
+          employeeId: enrichedMember?.employeeId || memberFromHierarchy.employeeId || `MBR-${nodeId.slice(0, 6).toUpperCase()}`,
+          reportingTo: enrichedMember?.reportingTo || memberFromHierarchy.reportingTo || 'Not provided',
+          joinedDate: enrichedMember?.joinedDate || memberFromHierarchy.joinedDate || memberFromHierarchy.createdAt || 'Not provided',
+          level: memberFromHierarchy.level || 'I',
+          levelName: memberFromHierarchy.levelName || getLevelLabel('I'),
+          status: memberFromHierarchy.status || 'active',
+          totalEarned: enrichedMember?.totalEarned || memberFromHierarchy.totalEarned || 0,
+          pendingCommission: enrichedMember?.pendingCommission || memberFromHierarchy.pendingCommission || 0,
+          directReferralCount: directMembers.length,
+          walletBalance: enrichedMember?.walletBalance || memberFromHierarchy.walletBalance || 0,
+          totalDonations: enrichedMember?.totalDonations || memberFromHierarchy.totalDonations || 0,
+          promotionEligible: enrichedMember?.promotionEligible || memberFromHierarchy.promotionEligible || false,
+          directCommission: enrichedMember?.directCommission || memberFromHierarchy.directCommission || 0,
+          secondaryCommission: enrichedMember?.secondaryCommission || memberFromHierarchy.secondaryCommission || 0,
+          donationsRequired: enrichedMember?.donationsRequired || memberFromHierarchy.donationsRequired || 0,
+          membersNeededForPromotion: enrichedMember?.membersNeededForPromotion || memberFromHierarchy.membersNeededForPromotion || 0,
+          nextLevel: enrichedMember?.nextLevel || memberFromHierarchy.nextLevel || null,
+          profilePhoto: enrichedMember?.profilePhoto || memberFromHierarchy.profilePhoto || null,
+          registeredMembersList: memberFromHierarchy.registeredMembersList || [],
+          parentId: memberFromHierarchy.parentId || null,
+          parentName: memberFromHierarchy.parentName || null,
+          createdAt: memberFromHierarchy.createdAt || 'Not provided',
+          updatedAt: memberFromHierarchy.updatedAt || 'Not provided'
+        },
+        directMembers: directMembers
+      });
+      console.log('✅ Using hierarchy data with enrichment - email:', email, 'phone:', phone);
+      setNodeMembersModalVisible(true);
+      setLoadingNodeMembers(false);
+      return;
+    }
+    
+    // FINAL FALLBACK: Use minimal data
+    console.log('❌ No data found for member:', nodeId);
+    setSelectedNodeMembers({
+      memberDetails: {
+        id: nodeId,
+        fullName: nodeName || 'Member',
+        email: 'Not provided',
+        phone: 'Not provided',
+        address: 'Not provided',
+        fatherName: 'Not provided',
+        dob: 'Not provided',
+        aadharNumber: 'Not provided',
+        gender: 'Not provided',
+        village: 'Not provided',
+        postOffice: 'Not provided',
+        thana: 'Not provided',
+        district: 'Not provided',
+        state: 'Not provided',
+        pinCode: 'Not provided',
+        membershipStatus: 'active',
+        bio: 'NGO Member',
+        department: 'Not assigned',
+        position: 'Member',
+        employeeId: `MBR-${nodeId.slice(0, 6).toUpperCase()}`,
+        reportingTo: 'Not provided',
+        joinedDate: 'Not provided',
+        level: 'I',
+        levelName: getLevelLabel('I'),
+        status: 'active',
+        totalEarned: 0,
+        pendingCommission: 0,
+        directReferralCount: 0,
+        walletBalance: 0,
+        totalDonations: 0,
+        promotionEligible: false,
+        directCommission: 0,
+        secondaryCommission: 0,
+        donationsRequired: 0,
+        membersNeededForPromotion: 0,
+        nextLevel: null,
+        profilePhoto: null,
+        registeredMembersList: [],
+        parentId: null,
+        parentName: null,
+        createdAt: 'Not provided',
+        updatedAt: 'Not provided'
+      },
+      directMembers: []
+    });
+    setNodeMembersModalVisible(true);
+    
+  } catch (error) {
+    console.error('❌ Error fetching node members:', error);
+    Alert.alert('Error', 'Failed to load member details');
+  } finally {
+    setLoadingNodeMembers(false);
+  }
+};
+  const downloadIDCard = async (member) => {
+    if (!idCardRef.current) {
+      Alert.alert('Error', 'ID Card not ready');
+      return;
+    }
+
+    setDownloading(true);
+    try {
+      const uri = await ViewShot.captureRef(idCardRef, {
+        format: 'png',
+        quality: 0.9,
+        width: 800,
+        height: 600,
+      });
+
+      const fileName = `ID_Card_${member.fullName || 'Member'}_${Date.now()}.png`;
+      
+      if (isWeb) {
+        const link = document.createElement('a');
+        link.href = uri;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        Alert.alert('Success', 'ID Card downloaded successfully!');
+      } else {
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(uri, {
+            mimeType: 'image/png',
+            dialogTitle: 'Save ID Card',
+          });
+        } else {
+          const newPath = FileSystem.documentDirectory + fileName;
+          await FileSystem.copyAsync({ from: uri, to: newPath });
+          await Sharing.shareAsync(newPath);
+        }
+        Alert.alert('Success', 'ID Card downloaded successfully!');
+      }
+    } catch (error) {
+      console.error('Error downloading ID Card:', error);
+      Alert.alert('Error', 'Failed to download ID Card. Please try again.');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const downloadCertificate = async (cert, index) => {
+    const refKey = `cert_${cert.id || index}`;
+    const certRef = certificateRefs.current[refKey];
+    
+    if (!certRef) {
+      Alert.alert('Error', 'Certificate not ready');
+      return;
+    }
+
+    setDownloadingCertId(cert.id || index);
+    try {
+      const uri = await ViewShot.captureRef(certRef, {
+        format: 'png',
+        quality: 0.9,
+        width: 800,
+        height: 500,
+      });
+
+      const fileName = `Certificate_${cert.title || 'Certificate'}_${Date.now()}.png`;
+      
+      if (isWeb) {
+        const link = document.createElement('a');
+        link.href = uri;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        Alert.alert('Success', 'Certificate downloaded successfully!');
+      } else {
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(uri, {
+            mimeType: 'image/png',
+            dialogTitle: 'Save Certificate',
+          });
+        } else {
+          const newPath = FileSystem.documentDirectory + fileName;
+          await FileSystem.copyAsync({ from: uri, to: newPath });
+          await Sharing.shareAsync(newPath);
+        }
+        Alert.alert('Success', 'Certificate downloaded successfully!');
+      }
+    } catch (error) {
+      console.error('Error downloading certificate:', error);
+      Alert.alert('Error', 'Failed to download certificate. Please try again.');
+    } finally {
+      setDownloadingCertId(null);
+    }
+  };
+
+  const openDownloadModal = (member) => {
+    setSelectedMemberForDownload(member);
+    setReferralCode(member.referralCode || '');
+    fetchMemberCertificates(member.id);
+    setDownloadModalVisible(true);
+  };
+
+  // Render ID Card Component
+  const renderIDCard = (member) => (
+    <ViewShot ref={idCardRef} options={{ format: 'png', quality: 0.9 }}>
+      <View style={styles.idCard}>
+        <View style={styles.watermarkContainer}>
+          <Svg height="100%" width="100%" style={StyleSheet.absoluteFillObject}>
+            <Defs>
+              <Pattern id="watermark" patternUnits="userSpaceOnUse" width={100} height={100}>
+                <SvgImage
+                  href={require('../../assets/watermark.png')}
+                  width={100}
+                  height={100}
+                  opacity={0.08}
+                />
+              </Pattern>
+            </Defs>
+            <Rect width="100%" height="100%" fill="url(#watermark)" />
+          </Svg>
+        </View>
+
+        <View style={styles.idCardTopSection}>
+          <View style={styles.idCardLeftLogo}>
+            <Image 
+              source={{ uri: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcR7cLJLLXgddsZygiRpdvi-NzOpYcooRXCS7kd9BK6Fcg&s=10' }}
+              style={styles.idCardLogoImage}
+              resizeMode="contain"
+            />
+          </View>
+          <View style={styles.idCardCenterTitle}>
+            <Text style={styles.idCardMainTitle}>कबीर सत धर्म फाउंडेशन (ट्रस्ट)</Text>
+            <Text style={styles.idCardSubTitle}>भारत सरकार द्वारा मान्यता प्राप्त</Text>
+            <Text style={styles.idCardRegNo}>पंजीकरण संख्या: U8550BR2024NPL067466</Text>
+          </View>
+          <View style={styles.idCardRightLogo}>
+            <Image 
+              source={{ uri: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRkyFSf2hPLbia_p0WxL6wQmoXFPTGlaWahT0DXI8nJjQ&s=10' }}
+              style={styles.idCardLogoImage}
+              resizeMode="contain"
+            />
+          </View>
+        </View>
+
+        <View style={styles.idCardIdentityTitle}>
+          <Text style={styles.idCardIdentityText}>पहचान पत्र</Text>
+        </View>
+
+        <View style={styles.idCardBody}>
+          <View style={styles.idCardLeftFields}>
+            <View style={styles.idCardField}>
+              <Text style={styles.idCardFieldLabel}>नाम :</Text>
+              <Text style={styles.idCardFieldValue} numberOfLines={1}>{member.fullName || translations.nA}</Text>
+            </View>
+            <View style={styles.idCardField}>
+              <Text style={styles.idCardFieldLabel}>पिता/पति का नाम :</Text>
+              <Text style={styles.idCardFieldValue} numberOfLines={1}>{member.fatherName || translations.nA}</Text>
+            </View>
+            <View style={styles.idCardField}>
+              <Text style={styles.idCardFieldLabel}>जन्म तिथि :</Text>
+              <Text style={styles.idCardFieldValue} numberOfLines={1}>{member.dob || translations.nA}</Text>
+            </View>
+            <View style={styles.idCardField}>
+              <Text style={styles.idCardFieldLabel}>आधार संख्या :</Text>
+              <Text style={styles.idCardFieldValue} numberOfLines={1}>{member.aadharNumber || translations.nA}</Text>
+            </View>
+            <View style={styles.idCardField}>
+              <Text style={styles.idCardFieldLabel}>सदस्यता स्थिति :</Text>
+              <Text style={[styles.idCardFieldValue, styles.idCardStatusValue]} numberOfLines={1}>
+                {member.status === 'active' ? 'सक्रिय' : member.status || translations.nA}
+              </Text>
+            </View>
+            <View style={styles.idCardField}>
+              <Text style={styles.idCardFieldLabel}>मोबाइल नंबर :</Text>
+              <Text style={styles.idCardFieldValue} numberOfLines={1}>{member.phone || translations.nA}</Text>
+            </View>
+            <View style={styles.idCardField}>
+              <Text style={styles.idCardFieldLabel}>पता :</Text>
+              <Text style={styles.idCardFieldValue} numberOfLines={2}>{member.address || translations.nA}</Text>
+            </View>
+          </View>
+
+          <View style={styles.idCardRightPhoto}>
+            <View style={styles.idCardPhotoWrapper}>
+              {member.profilePhoto ? (
+                <Image source={{ uri: member.profilePhoto }} style={styles.idCardPhoto} />
+              ) : (
+                <View style={styles.idCardPhotoPlaceholder}>
+                  <MaterialIcons name="person" size={60} color="#8b5cf6" />
+                </View>
+              )}
+            </View>
+            <Text style={styles.idCardPhotoLabel}>फोटो</Text>
+          </View>
+        </View>
+
+        <View style={styles.idCardFooter}>
+          <Text style={styles.idCardFooterText}>प्रबंधक</Text>
+          <View style={styles.idCardFooterCenter}>
+            <View style={styles.idCardSignatureLine} />
+            <Text style={styles.idCardSignatureLabel}>सदस्य हस्ताक्षर</Text>
+          </View>
+          <Text style={styles.idCardFooterText}>सचिव</Text>
+        </View>
+      </View>
+    </ViewShot>
+  );
+
+  // Render Certificate Item
+  const renderCertificateItem = (cert, index) => {
+    const refKey = `cert_${cert.id || index}`;
+    return (
+      <View key={index} style={styles.certItemWrapper}>
+        <ViewShot 
+          ref={ref => certificateRefs.current[refKey] = ref}
+          options={{ format: 'png', quality: 0.9 }}
+        >
+          <View style={styles.certItem}>
+            <View style={[styles.certItemIcon, { backgroundColor: getCertificateColor(cert.type) + '15' }]}>
+              <MaterialIcons name={getCertificateIcon(cert.type)} size={16} color={getCertificateColor(cert.type)} />
+            </View>
+            <View style={styles.certItemContent}>
+              <Text style={styles.certItemTitle} numberOfLines={1}>{cert.title || getCertificateTypeLabel(cert.type)}</Text>
+              <View style={styles.certItemMeta}>
+                <Text style={styles.certItemType} numberOfLines={1}>{getCertificateTypeLabel(cert.type)}</Text>
+                <Text style={styles.certItemDate} numberOfLines={1}>
+                  {cert.issuedDate ? new Date(cert.issuedDate).toLocaleDateString() : translations.nA}
+                </Text>
+              </View>
+            </View>
+            {cert.amount && (
+              <Text style={styles.certItemAmount} numberOfLines={1}>₹{cert.amount}</Text>
+            )}
+          </View>
+        </ViewShot>
+        
+        <TouchableOpacity 
+          style={styles.certDownloadButton}
+          onPress={() => downloadCertificate(cert, index)}
+          disabled={downloadingCertId === (cert.id || index)}
+          activeOpacity={0.7}
+        >
+          <MaterialIcons 
+            name={downloadingCertId === (cert.id || index) ? "hourglass-empty" : "download"} 
+            size={14} 
+            color="#8b5cf6" 
+          />
+          <Text style={styles.certDownloadText}>
+            {downloadingCertId === (cert.id || index) ? 'Downloading...' : 'Download'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    );
+  };
+
+  const getCertificateColor = (type) => {
+    switch(type) {
+      case 'donation': return '#ef4444';
+      case 'membership': return '#8b5cf6';
+      case 'volunteer': return '#10b981';
+      default: return '#f59e0b';
+    }
+  };
+
+  const getCertificateIcon = (type) => {
+    switch(type) {
+      case 'donation': return 'favorite';
+      case 'membership': return 'verified';
+      case 'volunteer': return 'handshake';
+      default: return 'verified';
+    }
+  };
+// ============ FETCH AVAILABLE SUB-MEMBERS (FOR HIERARCHY VIEW) ============
+const fetchSubMembersForHierarchy = async (parentId) => {
+  try {
+    const q = query(
+      collection(db, 'users'),
+      where('parentId', '==', parentId),
+      where('role', 'in', ['working', 'workingMember'])
+    );
+    const snapshot = await getDocs(q);
+    const subMembers = [];
+    for (const doc of snapshot.docs) {
+      const data = doc.data();
+      // Fetch children of this sub-member
+      const childrenQuery = query(
+        collection(db, 'users'),
+        where('parentId', '==', doc.id),
+        where('role', 'in', ['working', 'workingMember'])
+      );
+      const childrenSnap = await getDocs(childrenQuery);
+      const childrenList = [];
+      childrenSnap.forEach((childDoc) => {
+        childrenList.push({
+          id: childDoc.id,
+          ...childDoc.data()
+        });
+      });
+
+      subMembers.push({
+        id: doc.id,
+        ...data,
+        children: childrenList,
+        childrenCount: childrenList.length
+      });
+    }
+    return subMembers;
+  } catch (error) {
+    console.error('Error fetching sub-members for hierarchy:', error);
+    return [];
+  }
+};
+  const getCertificateTypeLabel = (type) => {
+    switch(type) {
+      case 'donation': return 'Donation';
+      case 'membership': return 'Membership';
+      case 'volunteer': return 'Volunteer';
+      default: return 'Certificate';
+    }
+  };
+
+  // Assign a sub-member to the selected parent
+  const handleAssignMember = async () => {
+    if (!selectedMemberForAssign || !selectedSubMemberId) {
+      Alert.alert('Error', 'Please select a member to assign');
+      return;
+    }
+
+    setSavingMember(true);
+    try {
+      const subMemberRef = doc(db, 'users', selectedSubMemberId);
+      await updateDoc(subMemberRef, {
+        parentId: selectedMemberForAssign.id,
+        parentName: selectedMemberForAssign.fullName,
+        updatedAt: new Date().toISOString()
+      });
+
+      const parentRef = doc(db, 'users', selectedMemberForAssign.id);
+      const parentDoc = await getDoc(parentRef);
+      if (parentDoc.exists()) {
+        const parentData = parentDoc.data();
+        const currentChildren = parentData.childrenIds || [];
+        if (!currentChildren.includes(selectedSubMemberId)) {
+          await updateDoc(parentRef, {
+            childrenIds: [...currentChildren, selectedSubMemberId],
+            updatedAt: new Date().toISOString()
+          });
+        }
+      }
+
+      Alert.alert(
+        'Success',
+        `${selectedSubMemberName} has been assigned under ${selectedMemberForAssign.fullName}`
+      );
+      
+      setAssignModalVisible(false);
+      setSelectedMemberForAssign(null);
+      setSelectedSubMemberId(null);
+      setSelectedSubMemberName('');
+      setAvailableSubMembers([]);
+      onRefresh();
+      
+    } catch (error) {
+      console.error('Error assigning member:', error);
+      Alert.alert('Error', 'Failed to assign member. Please try again.');
+    } finally {
+      setSavingMember(false);
+    }
+  };
+
+  // Unassign a sub-member from parent
+  const handleUnassignMember = async (memberId) => {
+    Alert.alert(
+      'Unassign Member',
+      'Are you sure you want to remove this member from their parent?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Unassign',
+          style: 'destructive',
+          onPress: async () => {
+            setSavingMember(true);
+            try {
+              const memberRef = doc(db, 'users', memberId);
+              const memberDoc = await getDoc(memberRef);
+              if (memberDoc.exists()) {
+                const memberData = memberDoc.data();
+                const parentId = memberData.parentId;
+                
+                await updateDoc(memberRef, {
+                  parentId: null,
+                  parentName: null,
+                  updatedAt: new Date().toISOString()
+                });
+
+                if (parentId) {
+                  const parentRef = doc(db, 'users', parentId);
+                  const parentDoc = await getDoc(parentRef);
+                  if (parentDoc.exists()) {
+                    const parentData = parentDoc.data();
+                    const currentChildren = parentData.childrenIds || [];
+                    const updatedChildren = currentChildren.filter(id => id !== memberId);
+                    await updateDoc(parentRef, {
+                      childrenIds: updatedChildren,
+                      updatedAt: new Date().toISOString()
+                    });
+                  }
+                }
+              }
+
+              Alert.alert('Success', 'Member unassigned successfully');
+              onRefresh();
+              
+            } catch (error) {
+              console.error('Error unassigning member:', error);
+              Alert.alert('Error', 'Failed to unassign member');
+            } finally {
+              setSavingMember(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleAddWorkingMember = async () => {
+  console.log('🔵 [ADD_WORKING_MEMBER] ===== STARTING =====');
+  console.log('🔵 [ADD_WORKING_MEMBER] Registration Method:', registrationMethod);
+  console.log('🔵 [ADD_WORKING_MEMBER] Full Name:', newMemberData.fullName);
+  console.log('🔵 [ADD_WORKING_MEMBER] Email:', newMemberData.email);
+  console.log('🔵 [ADD_WORKING_MEMBER] Phone:', newMemberData.phone);
+  console.log('🔵 [ADD_WORKING_MEMBER] Password length:', newMemberData.password?.length || 0);
+  
+  if (!newMemberData.fullName.trim()) {
+    Alert.alert('Error', 'Full Name is required');
+    return;
+  }
+  
+  if (registrationMethod === 'email') {
+    if (!newMemberData.email.trim()) {
+      Alert.alert('Error', 'Email is required');
+      return;
+    }
+    if (!newMemberData.password || newMemberData.password.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters');
+      return;
+    }
+  } else {
+    // Phone registration
+    if (!newMemberData.phone.trim()) {
+      Alert.alert('Error', 'Phone number is required');
+      return;
+    }
+    if (newMemberData.phone.trim().length < 10) {
+      Alert.alert('Error', 'Please enter a valid 10-digit phone number');
+      return;
+    }
+    if (!newMemberData.password || newMemberData.password.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters');
+      return;
+    }
+    // ✅ Email is optional for phone registration, but if provided, store it
+    // If not provided, use a default format or leave as empty string
+  }
+
+  setSavingMember(true);
+  try {
+    const auth = getAuthInstance();
+    let userCredential;
+    let userId;
+    
+    if (registrationMethod === 'email') {
+      console.log('🔵 [ADD_WORKING_MEMBER] Creating user with email:', newMemberData.email);
+      userCredential = await createUserWithEmailAndPassword(
+        auth,
+        newMemberData.email.trim(),
+        newMemberData.password
+      );
+      userId = userCredential.user.uid;
+      console.log('✅ [ADD_WORKING_MEMBER] Email user created with UID:', userId);
+    } else {
+      // Phone registration - create Firebase Auth user with email format
+      // Use the phone number as the email for Firebase Auth
+      const phoneEmail = `${newMemberData.phone.trim()}@phone.auth`;
+      console.log('🔵 [ADD_WORKING_MEMBER] Creating user with phone email:', phoneEmail);
+      
+      try {
+        userCredential = await createUserWithEmailAndPassword(
+          auth,
+          phoneEmail,
+          newMemberData.password
+        );
+        userId = userCredential.user.uid;
+        console.log('✅ [ADD_WORKING_MEMBER] Phone user created with UID:', userId);
+      } catch (phoneError) {
+        console.log('❌ [ADD_WORKING_MEMBER] Phone registration error:', phoneError);
+        // If phone email already exists, try with a different format
+        if (phoneError.code === 'auth/email-already-in-use') {
+          const altPhoneEmail = `phone_${newMemberData.phone.trim()}@auth.com`;
+          console.log('🔵 [ADD_WORKING_MEMBER] Trying alternate email:', altPhoneEmail);
+          userCredential = await createUserWithEmailAndPassword(
+            auth,
+            altPhoneEmail,
+            newMemberData.password
+          );
+          userId = userCredential.user.uid;
+          console.log('✅ [ADD_WORKING_MEMBER] Phone user created with alternate UID:', userId);
+        } else {
+          throw phoneError;
+        }
+      }
+    }
+
+    const selectedLevel = dynamicLevels.find(l => l.id === newMemberData.level) || { 
+      id: 'I', 
+      name: 'Customer', 
+      directCommission: 25, 
+      secondaryCommission: 10 
+    };
+
+    // ✅ Determine the email to store
+    // For phone registration, if email is provided, use it; otherwise use phone@email.format
+    let storedEmail = '';
+    if (registrationMethod === 'email') {
+      storedEmail = newMemberData.email.trim().toLowerCase();
+    } else {
+      // Phone registration - store the provided email if available, otherwise use phone number as email
+      if (newMemberData.email && newMemberData.email.trim()) {
+        storedEmail = newMemberData.email.trim().toLowerCase();
+      } else {
+        // If no email provided, use phone number with a default domain
+        storedEmail = `${newMemberData.phone.trim()}@phone.user`;
+      }
+    }
+    console.log('🔵 [ADD_WORKING_MEMBER] Stored Email:', storedEmail);
+
+    // Build user data
+    const userData = {
+      fullName: newMemberData.fullName.trim(),
+      email: storedEmail, // ✅ Always store email
+      phone: newMemberData.phone.trim(),
+      address: newMemberData.address.trim(),
+      village: newMemberData.village,
+      postOffice: newMemberData.postOffice,
+      thana: newMemberData.thana,
+      district: newMemberData.district,
+      state: newMemberData.state,
+      pinCode: newMemberData.pinCode,
+      gender: newMemberData.gender,
+      dob: newMemberData.dob,
+      aadharNumber: newMemberData.aadharNumber,
+      level: newMemberData.level || 'I',
+      directCommission: selectedLevel.directCommission || 25,
+      secondaryCommission: selectedLevel.secondaryCommission || 10,
+      role: 'working',
+      status: 'active',
+      profilePhoto: newMemberData.profilePhoto || null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      directReferrals: [],
+      registeredBy: auth.currentUser?.uid || 'admin',
+      promotionPending: false,
+      walletCreated: false,
+      parentId: parentMemberId || null,
+      parentName: parentMemberName || null,
+      registrationMethod: registrationMethod,
+      // ✅ Store password for phone login
+      password: newMemberData.password,
+      phonePassword: newMemberData.password,
+    };
+
+    console.log('🔵 [ADD_WORKING_MEMBER] User data prepared:');
+    console.log('🔵 [ADD_WORKING_MEMBER] - Full Name:', userData.fullName);
+    console.log('🔵 [ADD_WORKING_MEMBER] - Email:', userData.email);
+    console.log('🔵 [ADD_WORKING_MEMBER] - Phone:', userData.phone);
+    console.log('🔵 [ADD_WORKING_MEMBER] - Role:', userData.role);
+    console.log('🔵 [ADD_WORKING_MEMBER] - Status:', userData.status);
+    console.log('🔵 [ADD_WORKING_MEMBER] - Registration Method:', userData.registrationMethod);
+    console.log('🔵 [ADD_WORKING_MEMBER] - Password stored:', !!userData.password);
+    console.log('🔵 [ADD_WORKING_MEMBER] - Phone Password stored:', !!userData.phonePassword);
+    console.log('🔵 [ADD_WORKING_MEMBER] - Parent ID:', userData.parentId || 'none');
+    console.log('🔵 [ADD_WORKING_MEMBER] - Parent Name:', userData.parentName || 'none');
+
+    // Save to Firestore
+    console.log('🔵 [ADD_WORKING_MEMBER] Saving user to Firestore...');
+    await setDoc(doc(db, 'users', userId), userData);
+    console.log('✅ [ADD_WORKING_MEMBER] User saved to Firestore');
+
+    // If parent is selected, update parent's children list
+    if (parentMemberId) {
+      console.log('🔵 [ADD_WORKING_MEMBER] Updating parent:', parentMemberId);
+      try {
+        const parentRef = doc(db, 'users', parentMemberId);
+        const parentDoc = await getDoc(parentRef);
+        if (parentDoc.exists()) {
+          const parentData = parentDoc.data();
+          const currentChildren = parentData.childrenIds || [];
+          if (!currentChildren.includes(userId)) {
+            await updateDoc(parentRef, {
+              childrenIds: [...currentChildren, userId],
+              updatedAt: new Date().toISOString()
+            });
+            console.log('✅ [ADD_WORKING_MEMBER] Parent updated with new child');
+          }
+        }
+      } catch (error) {
+        console.error('❌ [ADD_WORKING_MEMBER] Error updating parent children:', error);
+      }
+    }
+
+    // Create wallet
+    console.log('🔵 [ADD_WORKING_MEMBER] Creating wallet...');
+    await setDoc(doc(db, 'wallets', userId), {
+      balance: 0,
+      totalEarned: 0,
+      pendingCommission: 0,
+      totalWithdrawn: 0,
+      pendingWithdrawals: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+    console.log('✅ [ADD_WORKING_MEMBER] Wallet created');
+
+    // Create phone mapping for phone registration
+    if (registrationMethod === 'phone') {
+      console.log('🔵 [ADD_WORKING_MEMBER] Creating phone mapping...');
+      try {
+        await setDoc(doc(db, 'phoneUsers', newMemberData.phone.trim()), {
+          userId: userId,
+          phone: newMemberData.phone.trim(),
+          role: 'working',
+          status: 'active',
+          email: storedEmail, // ✅ Store email in phone mapping too
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+        console.log('✅ [ADD_WORKING_MEMBER] Phone mapping created');
+      } catch (error) {
+        console.error('❌ [ADD_WORKING_MEMBER] Error creating phone mapping:', error);
+      }
+    }
+
+    Alert.alert(
+      'Success',
+      `Working member "${newMemberData.fullName}" added successfully!${parentMemberName ? `\nAttached to: ${parentMemberName}` : ''}${registrationMethod === 'phone' ? '\n📱 Phone login enabled' : ''}\n📧 Email: ${storedEmail}`
+    );
+    
+    setAddMemberModalVisible(false);
+    setParentMemberId(null);
+    setParentMemberName('');
+    resetNewMemberForm();
+    onRefresh();
+    
+  } catch (error) {
+    console.error('❌ [ADD_WORKING_MEMBER] Error adding working member:', error);
+    console.error('❌ [ADD_WORKING_MEMBER] Error code:', error.code);
+    console.error('❌ [ADD_WORKING_MEMBER] Error message:', error.message);
+    
+    let errorMessage = 'Failed to add working member. Please try again.';
+    if (error.code === 'auth/email-already-in-use') {
+      errorMessage = registrationMethod === 'email' 
+        ? 'Email already registered. Please use a different email.'
+        : 'Phone number already registered. Please use a different phone number.';
+    } else if (error.code === 'auth/invalid-email') {
+      errorMessage = 'Invalid email format.';
+    } else if (error.code === 'auth/weak-password') {
+      errorMessage = 'Password is too weak. Use at least 6 characters.';
+    } else if (error.code === 'auth/phone-number-already-exists') {
+      errorMessage = 'Phone number already registered.';
+    }
+    Alert.alert('Error', errorMessage);
+  } finally {
+    setSavingMember(false);
+    console.log('🔵 [ADD_WORKING_MEMBER] ===== COMPLETE =====');
+  }
+};
+  const resetNewMemberForm = () => {
+    setNewMemberData({
+      fullName: '',
+      email: '',
+      phone: '',
+      password: '',
+      address: '',
+      village: '',
+      postOffice: '',
+      thana: '',
+      district: '',
+      state: '',
+      pinCode: '',
+      gender: '',
+      dob: '',
+      aadharNumber: '',
+      level: 'I',
+      status: 'active',
+      role: 'working',
+      profilePhoto: null,
+      parentId: '',
+    });
+    setParentMemberId(null);
+    setParentMemberName('');
+    setSearchParent('');
+  };
+
+  const setupRealtimeListener = () => {
+  const auth = getAuthInstance();
+
+  const userId = auth.currentUser?.uid;
+  if (!userId) return;
+
+  const q = query(
+    collection(db, 'users'), 
+    where('role', 'in', ['working', 'workingMember'])
+  );
+  
+  const unsubscribe = onSnapshot(q, async (snapshot) => {
+    const membersList = [];
+    for (const doc of snapshot.docs) {
+      const data = doc.data();
+      const member = { id: doc.id, ...data };
+      
+      const level = data.level || 'I';
+      const levelDetails = getLevelDetails(level);
+      member.levelTitle = levelDetails.title;
+      member.levelColor = levelDetails.color;
+      member.levelBadge = levelDetails.badge;
+      member.directCommission = levelDetails.directCommission;
+      member.secondaryCommission = levelDetails.secondaryCommission;
+      
+      const directReferrals = data.directReferrals || [];
+      member.directReferralCount = directReferrals.length;
+      member.directReferrals = directReferrals;
+      
+      // ✅ FIX: Query registered members for THIS specific member only
+      const registeredQuery = query(
+        collection(db, 'users'), 
+        where('registeredBy', '==', doc.id)
+      );
+      const registeredSnap = await getDocs(registeredQuery);
+      
+      // ✅ FIX: Create a fresh array for each member - DO NOT reuse
+      const registeredList = [];
+      registeredSnap.forEach((regDoc) => {
+        const regData = regDoc.data();
+        // Only add non-working members
+        if (regData.role !== 'working' && regData.role !== 'workingMember') {
+          registeredList.push({ 
+            id: regDoc.id, 
+            ...regData 
+          });
+        }
+      });
+      // ✅ IMPORTANT: Assign the fresh array to the member
+      member.registeredMembersList = registeredList;
+      member.registeredMembers = registeredList.length;
+
+      try {
+        const wallet = await WalletService.getOrCreateWallet(doc.id);
+        member.walletBalance = wallet.balance || 0;
+        member.totalEarned = wallet.totalEarned || 0;
+        member.pendingCommission = wallet.pendingCommission || 0;
+      } catch (error) {
+        console.error('Error fetching wallet:', error);
+        member.walletBalance = 0;
+        member.totalEarned = 0;
+        member.pendingCommission = 0;
+      }
+
+      try {
+        const totalDonations = await CommissionService.getTotalDonationsByMember(doc.id);
+        member.totalDonations = totalDonations;
+      } catch (error) {
+        member.totalDonations = 0;
+      }
+
+      const levelsToUse = dynamicLevels || getDefaultLevels();
+      const currentLevelIndex = levelsToUse.findIndex(l => l.id === level);
+      const currentLevelData = currentLevelIndex !== -1 ? levelsToUse[currentLevelIndex] : null;
+      
+      if (currentLevelData) {
+        const donationsRequired = currentLevelData.donationsRequiredForPromotion || 0;
+        const isEligible = member.totalDonations >= donationsRequired && donationsRequired > 0;
+        member.promotionEligible = isEligible;
+        member.membersNeededForPromotion = Math.max(0, donationsRequired - member.totalDonations);
+        member.donationsRequired = donationsRequired;
+      } else {
+        member.promotionEligible = false;
+        member.membersNeededForPromotion = 0;
+        member.donationsRequired = 0;
+      }
+
+      const nextLevelId = getNextLevelId(level);
+      member.nextLevel = nextLevelId;
+      if (nextLevelId) {
+        const nextLevel = getLevelDetails(nextLevelId);
+        member.nextLevelTitle = nextLevel.title;
+      }
+
+      member.promotionPending = data.promotionPending || false;
+      
+      const commissionQuery = query(
+        collection(db, 'walletTransactions'),
+        where('userId', '==', doc.id),
+        where('type', 'in', ['direct_commission', 'secondary_commission']),
+        orderBy('createdAt', 'desc')
+      );
+      const commissionSnap = await getDocs(commissionQuery);
+      const history = [];
+      commissionSnap.forEach((cDoc) => {
+        history.push({ id: cDoc.id, ...cDoc.data() });
+      });
+      member.commissionHistory = history;
+
+      membersList.push(member);
+    }
+    
+    membersList.sort((a, b) => (b.totalEarned || 0) - (a.totalEarned || 0));
+    
+    setWorkingMembers(membersList);
+    applyFilters(membersList, search, filterStatus, filterLevel);
+    setLoading(false);
+  });
+
+  return () => unsubscribe();
+};
+  const getDefaultLevels = () => {
+    return [
+      { id: 'I', name: 'Customer', directCommission: 25, secondaryCommission: 10, donationsRequiredForPromotion: 10000 },
+      { id: 'II', name: 'Executive', directCommission: 35, secondaryCommission: 5, donationsRequiredForPromotion: 25000 },
+      { id: 'III', name: 'Manager', directCommission: 40, secondaryCommission: 2.5, donationsRequiredForPromotion: 50000 },
+      { id: 'IV', name: 'Coordinator', directCommission: 42.5, secondaryCommission: 1.25, donationsRequiredForPromotion: 100000 },
+      { id: 'V', name: 'Guide', directCommission: 43.75, secondaryCommission: 1.25, donationsRequiredForPromotion: 250000 },
+      { id: 'VI', name: 'Leader', directCommission: 44.5, secondaryCommission: 0.75, donationsRequiredForPromotion: 500000 },
+      { id: 'VII', name: 'Crown', directCommission: 45, secondaryCommission: 0.50, donationsRequiredForPromotion: Infinity }
+    ];
+  };
+
+  const getNextLevelId = (currentLevelId) => {
+    const levels = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+    const currentIndex = levels.indexOf(currentLevelId);
+    if (currentIndex < levels.length - 1) {
+      return levels[currentIndex + 1];
+    }
+    return null;
+  };
+
+  const applyFilters = (data, searchText, status, level) => {
+    let filtered = data;
+
+    if (searchText) {
+      const q = searchText.toLowerCase().trim();
+      filtered = filtered.filter(member => {
+        const haystack = [
+          member.fullName, member.name, member.email, member.phone,
+          member.address, member.village, member.postOffice, member.thana,
+          member.district, member.state, member.pinCode, member.aadharNumber,
+          member.gender, member.dob, member.role, member.status, member.level,
+          member.levelTitle, member.levelName, getLevelLabel(member.level),
+          member.position, member.department, member.employeeId,
+          member.referralCode, member.parentName, member.registrationMethod,
+          member.reportingTo,
+        ].filter(Boolean).map(v => String(v).toLowerCase()).join(' ');
+        return haystack.includes(q);
+      });
+    }
+
+    if (status !== 'all') {
+      filtered = filtered.filter(member => member.status === status);
+    }
+
+    if (level !== 'All') {
+      filtered = filtered.filter(member => {
+        const levelName = getLevelLabel(member.level);
+        return levelName.toLowerCase() === level.toLowerCase();
+      });
+    }
+
+    setFilteredMembers(filtered);
+  };
+  const handleSearch = (text) => {
+    setSearch(text);
+    applyFilters(workingMembers, text, filterStatus, filterLevel);
+  };
+
+  const handleFilterStatus = (status) => {
+    setFilterStatus(status);
+    applyFilters(workingMembers, search, status, filterLevel);
+  };
+
+  const handleFilterLevel = (levelName) => {
+    setFilterLevel(levelName);
+    applyFilters(workingMembers, search, filterStatus, levelName);
+  };
+
+  const handleStatusUpdate = async (id, status) => {
+    try {
+      await updateDoc(doc(db, 'users', id), { 
+        status, 
+        updatedAt: new Date().toISOString() 
+      });
+      Alert.alert(translations.success, translations.statusUpdated.replace('{status}', status));
+    } catch (error) {
+      Alert.alert(translations.error, error.message);
+    }
+  };
+
+  const handlePromotion = async () => {
+    if (!promotionData.memberId || !promotionData.newLevel) {
+      Alert.alert(translations.error, 'Please select a level');
+      return;
+    }
+
+    try {
+      const auth = getAuthInstance();
+      
+      const memberRef = doc(db, 'users', promotionData.memberId);
+      
+      await runTransaction(db, async (transaction) => {
+        const memberDoc = await transaction.get(memberRef);
+        if (!memberDoc.exists()) {
+          throw new Error('Member not found');
+        }
+
+        transaction.update(memberRef, {
+          level: promotionData.newLevel,
+          promotionPending: false,
+          promotionDate: Timestamp.now(),
+          updatedAt: Timestamp.now()
+        });
+
+        const promotionRef = doc(collection(db, 'promotions'));
+        transaction.set(promotionRef, {
+          memberId: promotionData.memberId,
+          memberName: promotionData.memberName,
+          fromLevel: promotionData.currentLevel,
+          toLevel: promotionData.newLevel,
+          date: Timestamp.now(),
+          approvedBy: auth.currentUser?.uid,
+          approvedByName: auth.currentUser?.displayName || 'Admin'
+        });
+      });
+
+      const levelDetails = getLevelDetails(promotionData.newLevel);
+      Alert.alert(translations.success, translations.promotionSuccess
+        .replace('{name}', promotionData.memberName)
+        .replace('{level}', levelDetails?.title || promotionData.newLevel));
+      setPromotionModalVisible(false);
+      onRefresh();
+    } catch (error) {
+      Alert.alert(translations.error, error.message);
+    }
+  };
+
+  const handleAddCommission = async () => {
+    if (!commissionData.memberId || !commissionData.amount) {
+      Alert.alert(translations.error, 'Please select a member and enter amount');
+      return;
+    }
+
+    try {
+      const amount = parseFloat(commissionData.amount);
+      const memberRef = doc(db, 'users', commissionData.memberId);
+      const memberDoc = await getDoc(memberRef);
+      const memberData = memberDoc.data();
+
+      await WalletService.addCommission(
+        commissionData.memberId,
+        amount,
+        commissionData.type === 'direct' ? 'direct_commission' : 'secondary_commission',
+        commissionData.description || `${commissionData.type} commission payment`,
+        `admin_${Date.now()}`
+      );
+
+      Alert.alert(translations.success, translations.commissionAdded
+        .replace('{amount}', commissionData.amount)
+        .replace('{name}', commissionData.memberName));
+      setCommissionModalVisible(false);
+      resetCommissionForm();
+      onRefresh();
+    } catch (error) {
+      Alert.alert(translations.error, error.message);
+    }
+  };
+
+  const viewCommissionHistory = async (member) => {
+    setSelectedMember(member);
+    try {
+      const q = query(
+        collection(db, 'walletTransactions'),
+        where('userId', '==', member.id),
+        where('type', 'in', ['direct_commission', 'secondary_commission']),
+        orderBy('createdAt', 'desc')
+      );
+      const snapshot = await getDocs(q);
+      const history = [];
+      snapshot.forEach((doc) => {
+        history.push({ id: doc.id, ...doc.data() });
+      });
+      setCommissionHistory(history);
+      setCommissionHistoryModalVisible(true);
+    } catch (error) {
+      Alert.alert(translations.error, error.message);
+    }
+  };
+
+  const viewWallet = async (member) => {
+    try {
+      const wallet = await WalletService.getOrCreateWallet(member.id);
+      setSelectedWallet({
+        ...wallet,
+        memberName: member.fullName || member.name,
+        memberId: member.id
+      });
+      setWalletModalVisible(true);
+    } catch (error) {
+      Alert.alert(translations.error, error.message);
+    }
+  };
+
+  const resetCommissionForm = () => {
+    setCommissionData({
+      memberId: '',
+      memberName: '',
+      amount: '',
+      type: 'direct',
+      description: '',
+      status: 'pending'
+    });
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await fetchDynamicLevels();
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    setRefreshing(false);
+  };
+
+  const getFilterCount = (levelName) => {
+    if (levelName === 'All') return workingMembers.length;
+    return workingMembers.filter(m => {
+      const memberLevelName = getLevelLabel(m.level);
+      return memberLevelName.toLowerCase() === levelName.toLowerCase();
+    }).length;
+  };
+
+  const getStatusCount = (status) => {
+    if (status === 'all') return workingMembers.length;
+    return workingMembers.filter(m => m.status === status).length;
+  };
+
+  const getLevelColor = (levelId) => {
+    const details = getLevelDetails(levelId);
+    return details.color || '#6b7280';
+  };
+
+  const getLevelIcon = (levelId) => {
+    const icons = {
+      'I': 'grade',
+      'II': 'star-half',
+      'III': 'star',
+      'IV': 'stars',
+      'V': 'military-tech',
+      'VI': 'workspace-premium',
+      'VII': 'emoji-events'
+    };
+    return icons[levelId] || 'circle';
+  };
+
+  const getStatusColor = (status) => {
+    switch(status) {
+      case 'active': return '#10b981';
+      case 'pending': return '#f59e0b';
+      case 'suspended': return '#ef4444';
+      default: return '#6b7280';
+    }
+  };
+
+  const getStatusLabel = (status) => {
+    switch(status) {
+      case 'active': return translations.active;
+      case 'pending': return translations.pending;
+      case 'suspended': return translations.suspended;
+      default: return status;
+    }
+  };
+
+  const getLevelLabel = (levelId) => {
+    if (dynamicLevels && dynamicLevels.length > 0) {
+      const dynamicLevel = dynamicLevels.find(l => l.id === levelId);
+      if (dynamicLevel) {
+        return dynamicLevel.name || levelId;
+      }
+    }
+    const details = getLevelDetails(levelId);
+    return details?.title || levelId;
+  };
+
+  const StatCard = ({ label, count, icon, color, active, onPress }) => (
+    <TouchableOpacity 
+      style={[styles.statCard, active && styles.statCardActive]} 
+      onPress={onPress}
+    >
+      <Text style={styles.statType}>{label}</Text>
+      <Text style={[styles.statCount, { color }]}>{count}</Text>
+    </TouchableOpacity>
+  );
+
+  const StatusFilterChip = ({ label, count, active, onPress }) => (
+    <TouchableOpacity
+      style={[styles.statusChip, active && styles.activeStatusChip]}
+      onPress={onPress}
+    >
+      <Text style={[
+        styles.statusChipText, 
+        active && styles.activeStatusChipText,
+        { fontSize: isSmallDevice ? 9 : 11 }
+      ]}>
+        {label} ({count})
+      </Text>
+    </TouchableOpacity>
+  );
+
+  const WorkingMemberCard = ({ member }) => {
+    const levelColor = getLevelColor(member.level);
+    const levelIcon = getLevelIcon(member.level);
+    const statusColor = getStatusColor(member.status);
+    const levelDetails = getLevelDetails(member.level);
+    const statusLabel = getStatusLabel(member.status);
+    const levelLabel = getLevelLabel(member.level);
+
+    return (
+      <TouchableOpacity 
+  style={styles.memberCard}
+    onPress={() => {
+    setSelectedMember(member);
+    loadMemberTree(member);
+    setDetailModalVisible(true);
+  }}
+  activeOpacity={0.7}
+>
+        <View style={styles.cardHeader}>
+          <View style={styles.memberInfo}>
+            <View style={styles.avatarContainer}>
+              {member.profilePhoto ? (
+                <Image source={{ uri: member.profilePhoto }} style={styles.avatar} />
+              ) : (
+                <View style={styles.avatarPlaceholder}>
+                  <Text style={[styles.avatarText, { fontSize: isSmallDevice ? 16 : 18 }]}>
+                    {member.fullName?.charAt(0) || '?'}
+                  </Text>
+                </View>
+              )}
+            </View>
+            <View style={styles.memberTextInfo}>
+              <Text style={[styles.memberName, { fontSize: isSmallDevice ? 13 : 14 }]} numberOfLines={1}>
+                {member.fullName || 'Unknown'}
+              </Text>
+              <Text style={[styles.memberEmail, { fontSize: isSmallDevice ? 10 : 12 }]} numberOfLines={1}>
+                {member.email}
+              </Text>
+            </View>
+          </View>
+          <View style={[styles.statusBadge, { backgroundColor: statusColor + '15' }]}>
+            <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+            <Text style={[styles.statusText, { color: statusColor, fontSize: isSmallDevice ? 9 : 10 }]}>
+              {statusLabel}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.cardStats}>
+          <View style={styles.statItem}>
+            <Text style={[styles.statValue, { fontSize: isSmallDevice ? 14 : 16 }]}>
+              {member.directReferralCount || 0}
+            </Text>
+            <Text style={[styles.statLabel, { fontSize: isSmallDevice ? 9 : 10 }]}>{translations.direct}</Text>
+          </View>
+          <View style={styles.statItem}>
+            <Text style={[styles.statValue, { fontSize: isSmallDevice ? 14 : 16 }]}>
+              ₹{member.totalEarned?.toLocaleString() || 0}
+            </Text>
+            <Text style={[styles.statLabel, { fontSize: isSmallDevice ? 9 : 10 }]}>{translations.earned}</Text>
+          </View>
+          <View style={styles.statItem}>
+            <Text style={[styles.statValue, { fontSize: isSmallDevice ? 14 : 16 }]}>
+              ₹{member.pendingCommission?.toLocaleString() || 0}
+            </Text>
+            <Text style={[styles.statLabel, { fontSize: isSmallDevice ? 9 : 10 }]}>{translations.pendingCommission}</Text>
+          </View>
+          <View style={styles.statItem}>
+            <Text style={[styles.statValue, { fontSize: isSmallDevice ? 14 : 16, color: '#f59e0b' }]}>
+              ₹{member.totalDonations?.toLocaleString() || 0}
+            </Text>
+            <Text style={[styles.statLabel, { fontSize: isSmallDevice ? 9 : 10 }]}>{translations.donations}</Text>
+          </View>
+        </View>
+
+        <View style={styles.cardFooter}>
+          <View style={[styles.levelBadge, { backgroundColor: levelColor + '15' }]}>
+            <MaterialIcons name={levelIcon} size={isSmallDevice ? 10 : 14} color={levelColor} />
+            <Text style={[styles.levelBadgeText, { color: levelColor, fontSize: isSmallDevice ? 9 : 11 }]}>
+              {levelLabel.substring(0, isSmallDevice ? 4 : 6)}
+            </Text>
+          </View>
+          <View style={styles.commissionInfo}>
+            <Text style={[styles.commissionRateText, { fontSize: isSmallDevice ? 9 : 10 }]}>
+              {member.directCommission || 0}%/{member.secondaryCommission || 0}%
+            </Text>
+          </View>
+          {member.promotionEligible && (
+            <View style={styles.promotionBadge}>
+              <MaterialIcons name="stars" size={isSmallDevice ? 8 : 12} color="#10b981" />
+              <Text style={[styles.promotionText, { fontSize: isSmallDevice ? 8 : 10 }]}>{translations.eligible}</Text>
+            </View>
+          )}
+          {member.nextLevel && (
+            <View style={styles.nextLevelBadge}>
+              <Text style={[styles.nextLevelText, { fontSize: isSmallDevice ? 8 : 10 }]}>
+                → {getLevelLabel(member.nextLevel).substring(0, isSmallDevice ? 3 : 4)}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.cardActions}>
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.commissionButton]}
+            onPress={() => {
+              setCommissionData({
+                memberId: member.id,
+                memberName: member.fullName || member.name || 'Unknown',
+                amount: '',
+                type: 'direct',
+                description: '',
+                status: 'pending'
+              });
+              setCommissionModalVisible(true);
+            }}
+          >
+            <MaterialIcons name="attach-money" size={isSmallDevice ? 10 : 14} color="#ffffff" />
+            <Text style={[styles.actionButtonText, { fontSize: isSmallDevice ? 7 : 9 }]}>{translations.add}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.historyButton]}
+            onPress={() => viewCommissionHistory(member)}
+          >
+            <MaterialIcons name="history" size={isSmallDevice ? 10 : 14} color="#ffffff" />
+            <Text style={[styles.actionButtonText, { fontSize: isSmallDevice ? 7 : 9 }]}>{translations.history}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.referralButton]}
+            onPress={() => {
+              setSelectedMemberForReferral(member);
+              setReferralCode(member.referralCode || '');
+              setReferralModalVisible(true);
+            }}
+            activeOpacity={0.7}
+          >
+            <MaterialIcons name="share" size={isSmallDevice ? 10 : 14} color="#ffffff" />
+            <Text style={[styles.actionButtonText, { fontSize: isSmallDevice ? 7 : 9 }]}>Referral</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.assignButton]}
+            onPress={() => {
+              setSelectedMemberForAssign(member);
+              fetchAvailableSubMembers(member.level);
+              setSelectedSubMemberId(null);
+              setSelectedSubMemberName('');
+              setAssignModalVisible(true);
+            }}
+          >
+            <MaterialIcons name="group-add" size={isSmallDevice ? 10 : 14} color="#ffffff" />
+            <Text style={[styles.actionButtonText, { fontSize: isSmallDevice ? 7 : 9 }]}>Assign</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.downloadButton]}
+            onPress={() => openDownloadModal(member)}
+            activeOpacity={0.7}
+          >
+            <MaterialIcons name="download" size={isSmallDevice ? 10 : 14} color="#ffffff" />
+            <Text style={[styles.actionButtonText, { fontSize: isSmallDevice ? 7 : 9 }]}>Download</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.walletButton]}
+            onPress={() => viewWallet(member)}
+          >
+            <MaterialIcons name="account-balance-wallet" size={isSmallDevice ? 10 : 14} color="#ffffff" />
+            <Text style={[styles.actionButtonText, { fontSize: isSmallDevice ? 7 : 9 }]}>{translations.wallet}</Text>
+          </TouchableOpacity>
+          {member.promotionEligible && (
+            <TouchableOpacity 
+              style={[styles.actionButton, styles.promoteButton]}
+              onPress={() => {
+                const nextLevelId = getNextLevelId(member.level);
+                setPromotionData({
+                  memberId: member.id,
+                  memberName: member.fullName,
+                  currentLevel: member.level,
+                  newLevel: nextLevelId || member.level,
+                  commissionRate: ''
+                });
+                setPromotionModalVisible(true);
+              }}
+            >
+              <MaterialIcons name="stars" size={isSmallDevice ? 10 : 14} color="#ffffff" />
+              <Text style={[styles.actionButtonText, { fontSize: isSmallDevice ? 7 : 9 }]}>{translations.promote}</Text>
+            </TouchableOpacity>
+          )}
+          {member.status !== 'active' && (
+            <TouchableOpacity 
+              style={[styles.actionButton, styles.approveButton]}
+              onPress={() => handleStatusUpdate(member.id, 'active')}
+            >
+              <MaterialIcons name="check-circle" size={isSmallDevice ? 10 : 14} color="#ffffff" />
+              <Text style={[styles.actionButtonText, { fontSize: isSmallDevice ? 7 : 9 }]}>{translations.approve}</Text>
+            </TouchableOpacity>
+          )}
+          {member.status === 'active' && (
+            <TouchableOpacity 
+              style={[styles.actionButton, styles.suspendButton]}
+              onPress={() => handleStatusUpdate(member.id, 'suspended')}
+            >
+              <MaterialIcons name="block" size={isSmallDevice ? 10 : 14} color="#ffffff" />
+              <Text style={[styles.actionButtonText, { fontSize: isSmallDevice ? 7 : 9 }]}>{translations.suspend}</Text>
+            </TouchableOpacity>
+          )}
+                    <TouchableOpacity 
+            style={[styles.actionButton, styles.editButton]}
+            onPress={() => openEditMember(member)}
+          >
+            <MaterialIcons name="edit" size={isSmallDevice ? 10 : 14} color="#ffffff" />
+            <Text style={[styles.actionButtonText, { fontSize: isSmallDevice ? 7 : 9 }]}>Edit</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.viewButton]}
+            onPress={() => {
+              setSelectedMember(member);
+              loadMemberTree(member);
+              setDetailModalVisible(true);
+            }}
+          >
+            <MaterialIcons name="visibility" size={isSmallDevice ? 10 : 14} color="#ffffff" />
+            <Text style={[styles.actionButtonText, { fontSize: isSmallDevice ? 7 : 9 }]}>{translations.view}</Text>
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+// Add this component with your other modal components (around line 1200-1300)
+// ============ NODE MEMBERS MODAL (UPDATED TO MATCH WORKING MEMBER DETAILS) ============
+const NodeMembersModal = () => {
+  const getDisplayData = () => {
+    if (selectedNodeMembers && typeof selectedNodeMembers === 'object') {
+      if (selectedNodeMembers.memberDetails) {
+        return {
+          memberDetails: selectedNodeMembers.memberDetails,
+          directMembers: selectedNodeMembers.directMembers || []
+        };
+      }
+      if (Array.isArray(selectedNodeMembers)) {
+        const filtered = selectedNodeMembers.filter(m => 
+          m.role !== 'working' && m.role !== 'workingMember'
+        );
+        return {
+          memberDetails: {
+            fullName: selectedNodeName || 'Member',
+            email: 'N/A',
+            phone: 'N/A',
+            address: 'N/A',
+            fatherName: 'N/A',
+            dob: 'N/A',
+            aadharNumber: 'N/A',
+            membershipStatus: 'N/A',
+            bio: 'N/A',
+            department: 'N/A',
+            position: 'N/A',
+            employeeId: 'N/A',
+            reportingTo: 'N/A',
+            joinedDate: 'N/A',
+            level: 'N/A',
+            levelName: 'N/A',
+            status: 'N/A',
+            totalEarned: 0,
+            pendingCommission: 0,
+            directReferralCount: filtered.length,
+            walletBalance: 0,
+            totalDonations: 0,
+            promotionEligible: false,
+            profilePhoto: null,
+            registeredMembersList: []
+          },
+          directMembers: filtered
+        };
+      }
+    }
+    return {
+      memberDetails: {
+        fullName: selectedNodeName || 'Member',
+        email: 'N/A',
+        phone: 'N/A',
+        address: 'N/A',
+        fatherName: 'N/A',
+        dob: 'N/A',
+        aadharNumber: 'N/A',
+        membershipStatus: 'N/A',
+        bio: 'N/A',
+        department: 'N/A',
+        position: 'N/A',
+        employeeId: 'N/A',
+        reportingTo: 'N/A',
+        joinedDate: 'N/A',
+        level: 'N/A',
+        levelName: 'N/A',
+        status: 'N/A',
+        totalEarned: 0,
+        pendingCommission: 0,
+        directReferralCount: 0,
+        walletBalance: 0,
+        totalDonations: 0,
+        promotionEligible: false,
+        profilePhoto: null,
+        registeredMembersList: []
+      },
+      directMembers: []
+    };
+  };
+
+  const { memberDetails, directMembers } = getDisplayData();
+  const totalCount = directMembers.length;
+  const statusColor = memberDetails.status === 'active' ? '#10b981' : 
+                      memberDetails.status === 'pending' ? '#f59e0b' : '#ef4444';
+  const statusLabel = memberDetails.status === 'active' ? translations.active : 
+                      memberDetails.status === 'pending' ? translations.pending : 
+                      memberDetails.status || 'Unknown';
+
+  return (
+    <Modal
+      animationType="slide"
+      transparent={true}
+      visible={nodeMembersModalVisible}
+      onRequestClose={() => setNodeMembersModalVisible(false)}
+    >
+      <View style={styles.modalContainer}>
+        <ScrollView style={styles.nodeMembersModalContent} showsVerticalScrollIndicator={false}>
+          <View style={styles.modalHeader}>
+            <View style={styles.nodeModalHeaderLeft}>
+              <Text style={[styles.modalTitle, { fontSize: isSmallDevice ? 16 : 18 }]}>
+                {memberDetails.fullName || selectedNodeName || 'Member'}
+              </Text>
+              <View style={styles.nodeModalStatusRow}>
+                <View style={[styles.nodeModalStatusBadge, { backgroundColor: statusColor + '15' }]}>
+                  <View style={[styles.nodeModalStatusDot, { backgroundColor: statusColor }]} />
+                  <Text style={[styles.nodeModalStatusText, { color: statusColor }]}>
+                    {statusLabel}
+                  </Text>
+                </View>
+                <Text style={[styles.nodeModalLevelText, { fontSize: isSmallDevice ? 11 : 12 }]}>
+                  Level: {memberDetails.levelName || memberDetails.level || 'N/A'}
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity onPress={() => setNodeMembersModalVisible(false)}>
+              <MaterialIcons name="close" size={24} color="#6B7280" />
+            </TouchableOpacity>
+          </View>
+
+          {/* ============ PROFILE SECTION (Matches Working Member Detail) ============ */}
+          <View style={styles.detailProfile}>
+            {memberDetails.profilePhoto ? (
+              <Image source={{ uri: memberDetails.profilePhoto }} style={styles.detailAvatar} />
+            ) : (
+              <View style={styles.detailAvatarPlaceholder}>
+                <Text style={[styles.detailAvatarText, { fontSize: isSmallDevice ? 28 : 32 }]}>
+                  {memberDetails.fullName?.charAt(0) || '?'}
+                </Text>
+              </View>
+            )}
+            <Text style={[styles.detailName, { fontSize: isSmallDevice ? 18 : 20 }]}>
+              {memberDetails.fullName}
+            </Text>
+            <Text style={[styles.detailEmail, { fontSize: isSmallDevice ? 12 : 14 }]}>
+              {memberDetails.email || memberDetails.phone || 'No contact'}
+            </Text>
+            <View style={[styles.detailLevelBadge, { backgroundColor: getLevelColor(memberDetails.level) + '15' }]}>
+              <MaterialIcons name={getLevelIcon(memberDetails.level)} size={14} color={getLevelColor(memberDetails.level)} />
+              <Text style={[styles.detailLevelText, { color: getLevelColor(memberDetails.level), fontSize: isSmallDevice ? 12 : 14 }]}>
+                {getLevelLabel(memberDetails.level).toUpperCase()}
+              </Text>
+            </View>
+          </View>
+
+          {/* ============ PERFORMANCE SECTION (Matches Working Member Detail) ============ */}
+          <View style={styles.detailSection}>
+            <Text style={[styles.detailSectionTitle, { fontSize: isSmallDevice ? 13 : 14 }]}>
+              {translations.performance}
+            </Text>
+            <View style={styles.detailStats}>
+              <View style={styles.detailStat}>
+                <Text style={[styles.detailStatValue, { fontSize: isSmallDevice ? 16 : 18 }]}>
+                  {memberDetails.directReferralCount || 0}
+                </Text>
+                <Text style={[styles.detailStatLabel, { fontSize: isSmallDevice ? 10 : 11 }]}>
+                  {translations.direct}
+                </Text>
+              </View>
+              <View style={styles.detailStat}>
+                <Text style={[styles.detailStatValue, { fontSize: isSmallDevice ? 16 : 18 }]}>
+                  ₹{memberDetails.totalEarned?.toLocaleString() || 0}
+                </Text>
+                <Text style={[styles.detailStatLabel, { fontSize: isSmallDevice ? 10 : 11 }]}>
+                  {translations.earned}
+                </Text>
+              </View>
+              <View style={styles.detailStat}>
+                <Text style={[styles.detailStatValue, { fontSize: isSmallDevice ? 16 : 18 }]}>
+                  ₹{memberDetails.pendingCommission?.toLocaleString() || 0}
+                </Text>
+                <Text style={[styles.detailStatLabel, { fontSize: isSmallDevice ? 10 : 11 }]}>
+                  {translations.pendingCommission}
+                </Text>
+              </View>
+              <View style={styles.detailStat}>
+                <Text style={[styles.detailStatValue, { fontSize: isSmallDevice ? 16 : 18, color: '#f59e0b' }]}>
+                  ₹{memberDetails.totalDonations?.toLocaleString() || 0}
+                </Text>
+                <Text style={[styles.detailStatLabel, { fontSize: isSmallDevice ? 10 : 11 }]}>
+                  {translations.donations}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* ============ COMMISSION RATES SECTION (Matches Working Member Detail) ============ */}
+          <View style={styles.detailSection}>
+            <Text style={[styles.detailSectionTitle, { fontSize: isSmallDevice ? 13 : 14 }]}>
+              {translations.commissionRates}
+            </Text>
+            <View style={styles.detailCommissionRow}>
+              <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                {translations.directCommission}
+              </Text>
+              <Text style={[styles.detailValue, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                {memberDetails.directCommission || 0}%
+              </Text>
+            </View>
+            <View style={styles.detailCommissionRow}>
+              <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                {translations.secondaryCommission}
+              </Text>
+              <Text style={[styles.detailValue, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                {memberDetails.secondaryCommission || 0}%
+              </Text>
+            </View>
+          </View>
+
+          {/* ============ DIRECT MEMBERS SECTION (Matches Working Member Detail) ============ */}
+          <View style={styles.detailSection}>
+            <View style={styles.hierarchyHeader}>
+              <Text style={[styles.detailSectionTitle, { fontSize: isSmallDevice ? 13 : 14 }]}>
+                {translations.directMembers}
+              </Text>
+              {totalCount > 0 && (
+                <Text style={styles.hierarchyCount}>
+                  ({totalCount})
+                </Text>
+              )}
+            </View>
+            
+            {loadingNodeMembers ? (
+              <View style={styles.hierarchyLoading}>
+                <ActivityIndicator size="small" color="#FF7722" />
+                <Text style={styles.hierarchyLoadingText}>Loading members...</Text>
+              </View>
+            ) : totalCount === 0 ? (
+              <View style={styles.hierarchyEmptyState}>
+                <MaterialIcons name="people-outline" size={30} color="#d1d5db" />
+                <Text style={[styles.detailEmptyText, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                  No direct members yet
+                </Text>
+                <Text style={[styles.hierarchyEmptySubtext, { fontSize: isSmallDevice ? 10 : 11 }]}>
+                  Members registered by this member will appear here
+                </Text>
+              </View>
+            ) : (
+              directMembers.map((member, index) => (
+                <TouchableOpacity 
+                  key={index} 
+                  style={styles.directMemberRow}
+                  onPress={() => {
+                    Alert.alert(
+                      'Member Details',
+                      `👤 Name: ${member.fullName || 'Unknown'}\n` +
+                      `📧 Email: ${member.email || 'N/A'}\n` +
+                      `📱 Phone: ${member.phone || 'N/A'}\n` +
+                      `📊 Status: ${member.status || 'N/A'}\n` +
+                      `🏅 Level: ${member.level || 'N/A'}`
+                    );
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.directMemberAvatar}>
+                    <Text style={styles.directMemberAvatarText}>
+                      {member.fullName?.charAt(0)?.toUpperCase() || '?'}
+                    </Text>
+                  </View>
+                  <View style={styles.directMemberInfo}>
+                    <Text style={[styles.directMemberName, { fontSize: isSmallDevice ? 13 : 14 }]}>
+                      {member.fullName || 'Unknown Member'}
+                    </Text>
+                    <Text style={[styles.directMemberDetails, { fontSize: isSmallDevice ? 10 : 11 }]}>
+                      {member.email || member.phone || 'No contact'}
+                    </Text>
+                    <View style={styles.directMemberMeta}>
+                      <View style={[
+                        styles.directMemberStatus,
+                        { backgroundColor: member.status === 'active' ? '#d1fae5' : '#fee2e2' }
+                      ]}>
+                        <Text style={[
+                          styles.directMemberStatusText,
+                          { color: member.status === 'active' ? '#10b981' : '#ef4444' }
+                        ]}>
+                          {member.status || 'unknown'}
+                        </Text>
+                      </View>
+                      {member.level && (
+                        <Text style={styles.directMemberLevel}>
+                          Level {member.level}
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+                  <MaterialIcons name="chevron-right" size={20} color="#d1d5db" />
+                </TouchableOpacity>
+              ))
+            )}
+          </View>
+
+          {/* ============ STATUS SECTION (Matches Working Member Detail) ============ */}
+          <View style={styles.detailSection}>
+            <Text style={[styles.detailSectionTitle, { fontSize: isSmallDevice ? 13 : 14 }]}>
+              {translations.status}
+            </Text>
+            <View style={styles.detailStatusRow}>
+              <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                {translations.status}:
+              </Text>
+              <View style={[styles.detailStatusBadge, { backgroundColor: statusColor + '15' }]}>
+                <Text style={[styles.detailStatusText, { color: statusColor, fontSize: isSmallDevice ? 10 : 11 }]}>
+                  {statusLabel}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.detailStatusRow}>
+              <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                {translations.level}:
+              </Text>
+              <Text style={[styles.detailValue, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                {getLevelLabel(memberDetails.level)}
+              </Text>
+            </View>
+            <View style={styles.detailStatusRow}>
+              <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                {translations.nextLevel}:
+              </Text>
+              <Text style={[styles.detailValue, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                {memberDetails.nextLevel ? getLevelLabel(memberDetails.nextLevel) : translations.max}
+              </Text>
+            </View>
+            <View style={styles.detailStatusRow}>
+              <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                {translations.donationsReq}:
+              </Text>
+              <Text style={[styles.detailValue, { fontSize: isSmallDevice ? 12 : 13, color: '#f59e0b' }]}>
+                ₹{memberDetails.donationsRequired?.toLocaleString() || 0}
+              </Text>
+            </View>
+            <View style={styles.detailStatusRow}>
+              <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                {translations.wallet}:
+              </Text>
+              <Text style={[styles.detailValue, { fontSize: isSmallDevice ? 12 : 13, color: '#10b981' }]}>
+                ₹{memberDetails.walletBalance?.toLocaleString() || 0}
+              </Text>
+            </View>
+            {memberDetails.promotionEligible && (
+              <View style={styles.detailStatusRow}>
+                <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                  {translations.promotion}:
+                </Text>
+                <Text style={[styles.detailValue, { fontSize: isSmallDevice ? 12 : 13, color: '#10b981' }]}>
+                  {translations.eligible}
+                </Text>
+              </View>
+            )}
+            {!memberDetails.promotionEligible && memberDetails.donationsRequired > 0 && (
+              <View style={styles.detailStatusRow}>
+                <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                  {translations.promotion}:
+                </Text>
+                <Text style={[styles.detailValue, { fontSize: isSmallDevice ? 12 : 13, color: '#f59e0b' }]}>
+                  ₹{memberDetails.membersNeededForPromotion?.toLocaleString() || 0} {translations.moreNeeded}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* ============ PERSONAL INFORMATION ============ */}
+          <View style={styles.detailSection}>
+            <Text style={[styles.detailSectionTitle, { fontSize: isSmallDevice ? 13 : 14 }]}>
+              Personal Information
+            </Text>
+            
+            <View style={styles.detailStatusRow}>
+              <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                Full Name:
+              </Text>
+              <Text style={[styles.detailValue, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                {memberDetails.fullName || 'N/A'}
+              </Text>
+            </View>
+
+            <View style={styles.detailStatusRow}>
+              <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                Father/Husband:
+              </Text>
+              <Text style={[styles.detailValue, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                {memberDetails.fatherName || 'N/A'}
+              </Text>
+            </View>
+
+            <View style={styles.detailStatusRow}>
+              <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                Date of Birth:
+              </Text>
+              <Text style={[styles.detailValue, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                {memberDetails.dob || 'N/A'}
+              </Text>
+            </View>
+
+            <View style={styles.detailStatusRow}>
+              <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                Aadhar Number:
+              </Text>
+              <Text style={[styles.detailValue, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                {memberDetails.aadharNumber || 'N/A'}
+              </Text>
+            </View>
+
+            <View style={styles.detailStatusRow}>
+              <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                Membership Status:
+              </Text>
+              <View style={[styles.detailStatusBadge, { backgroundColor: statusColor + '15' }]}>
+                <Text style={[styles.detailStatusText, { color: statusColor, fontSize: isSmallDevice ? 10 : 11 }]}>
+                  {memberDetails.membershipStatus === 'active' || memberDetails.membershipStatus === 'Active' ? 'Active' : 'Inactive'}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.detailStatusRow}>
+              <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                Email:
+              </Text>
+              <Text style={[styles.detailValue, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                {memberDetails.email && memberDetails.email !== 'N/A' && memberDetails.email !== 'Not provided' 
+                  ? memberDetails.email 
+                  : 'Not provided'}
+              </Text>
+            </View>
+
+            <View style={styles.detailStatusRow}>
+              <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                Phone:
+              </Text>
+              <Text style={[styles.detailValue, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                {memberDetails.phone && memberDetails.phone !== 'N/A' && memberDetails.phone !== 'Not provided' 
+                  ? memberDetails.phone 
+                  : 'Not provided'}
+              </Text>
+            </View>
+
+            <View style={styles.detailStatusRow}>
+              <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                Address:
+              </Text>
+              <Text style={[styles.detailValue, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                {memberDetails.address || 'N/A'}
+              </Text>
+            </View>
+          </View>
+
+          {/* ============ EMPLOYMENT INFORMATION ============ */}
+          <View style={styles.detailSection}>
+            <Text style={[styles.detailSectionTitle, { fontSize: isSmallDevice ? 13 : 14 }]}>
+              Employment Information
+            </Text>
+
+            <View style={styles.detailStatusRow}>
+              <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                Department:
+              </Text>
+              <Text style={[styles.detailValue, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                {memberDetails.department || 'Not assigned'}
+              </Text>
+            </View>
+
+            <View style={styles.detailStatusRow}>
+              <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                Position:
+              </Text>
+              <Text style={[styles.detailValue, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                {memberDetails.position || 'Member'}
+              </Text>
+            </View>
+
+            <View style={styles.detailStatusRow}>
+              <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                Member ID:
+              </Text>
+              <Text style={[styles.detailValue, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                {memberDetails.employeeId || 'N/A'}
+              </Text>
+            </View>
+
+            <View style={styles.detailStatusRow}>
+              <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                Reporting To:
+              </Text>
+              <Text style={[styles.detailValue, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                {memberDetails.reportingTo || 'N/A'}
+              </Text>
+            </View>
+
+            <View style={styles.detailStatusRow}>
+              <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                Joined Date:
+              </Text>
+              <Text style={[styles.detailValue, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                {memberDetails.joinedDate || 'N/A'}
+              </Text>
+            </View>
+          </View>
+
+          <TouchableOpacity 
+            style={styles.closeButton}
+            onPress={() => setNodeMembersModalVisible(false)}
+          >
+            <Text style={[styles.closeButtonText, { fontSize: isSmallDevice ? 13 : 14 }]}>
+              {translations.close}
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+};
+  const WalletModal = () => {
+    if (!selectedWallet) return null;
+
+    return (
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={walletModalVisible}
+        onRequestClose={() => setWalletModalVisible(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={[styles.modalTitle, { fontSize: isSmallDevice ? 16 : 18 }]}>{translations.walletDetails}</Text>
+              <TouchableOpacity onPress={() => setWalletModalVisible(false)}>
+                <MaterialIcons name="close" size={24} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.walletSummary}>
+              <Text style={[styles.walletMemberName, { fontSize: isSmallDevice ? 16 : 18 }]}>
+                {selectedWallet.memberName}
+              </Text>
+              <View style={styles.walletBalanceContainer}>
+                <Text style={[styles.walletBalanceLabel, { fontSize: isSmallDevice ? 12 : 14 }]}>
+                  {translations.availableBalance}
+                </Text>
+                <Text style={[styles.walletBalance, { fontSize: isSmallDevice ? 28 : 32 }]}>
+                  ₹{selectedWallet.balance?.toLocaleString() || 0}
+                </Text>
+              </View>
+              <View style={styles.walletStats}>
+                <View style={styles.walletStat}>
+                  <Text style={[styles.walletStatValue, { fontSize: isSmallDevice ? 14 : 16 }]}>
+                    ₹{selectedWallet.totalEarned?.toLocaleString() || 0}
+                  </Text>
+                  <Text style={[styles.walletStatLabel, { fontSize: isSmallDevice ? 9 : 11 }]}>{translations.earned}</Text>
+                </View>
+                <View style={styles.walletStat}>
+                  <Text style={[styles.walletStatValue, { fontSize: isSmallDevice ? 14 : 16 }]}>
+                    ₹{selectedWallet.pendingCommission?.toLocaleString() || 0}
+                  </Text>
+                  <Text style={[styles.walletStatLabel, { fontSize: isSmallDevice ? 9 : 11 }]}>{translations.pendingCommission}</Text>
+                </View>
+                <View style={styles.walletStat}>
+                  <Text style={[styles.walletStatValue, { fontSize: isSmallDevice ? 14 : 16 }]}>
+                    ₹{selectedWallet.totalWithdrawn?.toLocaleString() || 0}
+                  </Text>
+                  <Text style={[styles.walletStatLabel, { fontSize: isSmallDevice ? 9 : 11 }]}>{translations.withdrawn}</Text>
+                </View>
+              </View>
+            </View>
+
+            <TouchableOpacity 
+              style={styles.closeButton}
+              onPress={() => setWalletModalVisible(false)}
+            >
+              <Text style={[styles.closeButtonText, { fontSize: isSmallDevice ? 13 : 14 }]}>{translations.close}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+    );
+  };
+  // ============ Recursive tree renderer ============
+  const renderTreeNode = (node, depth = 0, isRoot = false) => {
+    const hasChildren = node.children && node.children.length > 0;
+    const levelColor = getLevelColor(node.level);
+    const indent = Math.min(depth * 14, 60);
+
+    return (
+      <View key={node.id} style={{ marginBottom: 6 }}>
+        <TouchableOpacity
+          style={[
+            styles.treeNodeCard,
+            isRoot && styles.treeNodeRoot,
+            depth === 1 && !isRoot && styles.treeNodeDirect,
+            { marginLeft: indent },
+          ]}
+          onPress={() => openNodeDetail(node)}
+          activeOpacity={0.7}
+        >
+          <View style={[styles.treeNodeLevelBadge, { backgroundColor: levelColor + '20' }]}>
+            <Text style={[styles.treeNodeLevelText, { color: levelColor }]}>
+              {node.levelName || getLevelLabel(node.level) || 'I'}
+            </Text>
+          </View>
+          <View style={[styles.treeNodeAvatar, { backgroundColor: isRoot ? '#FF7722' : '#fef3c7' }]}>
+            <Text style={[styles.treeNodeAvatarText, { color: isRoot ? '#ffffff' : '#FF7722' }]}>
+              {node.fullName?.charAt(0)?.toUpperCase() || '?'}
+            </Text>
+          </View>
+          <View style={{ flex: 1, marginLeft: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+              <Text style={[styles.treeNodeName, isRoot && styles.treeNodeNameRoot]} numberOfLines={1}>
+                {node.fullName || 'Unknown'}
+              </Text>
+              {isRoot && (
+                <View style={styles.treeNodeRootBadge}>
+                  <Text style={styles.treeNodeRootBadgeText}>You</Text>
+                </View>
+              )}
+              {depth === 1 && !isRoot && (
+                <View style={styles.treeNodeDirectBadge}>
+                  <Text style={styles.treeNodeDirectBadgeText}>Direct</Text>
+                </View>
+              )}
+              {(node.registeredCount || 0) > 0 && (
+                <View style={styles.treeNodeRegBadge}>
+                  <MaterialIcons name="person-add" size={9} color="#f59e0b" />
+                  <Text style={styles.treeNodeRegBadgeText}>{node.registeredCount}</Text>
+                </View>
+              )}
+              {hasChildren && (
+                <View style={styles.treeNodeChildBadge}>
+                  <MaterialIcons name="people" size={9} color="#8b5cf6" />
+                  <Text style={styles.treeNodeChildBadgeText}>{node.children.length}</Text>
+                </View>
+              )}
+            </View>
+            <Text style={styles.treeNodeMeta} numberOfLines={1}>
+              {node.phone || node.email || '—'}
+            </Text>
+          </View>
+          <View style={[styles.treeNodeStatus, { backgroundColor: node.status === 'active' ? '#d1fae5' : '#fee2e2' }]}>
+            <Text style={{ fontFamily: Fonts.SemiBold, fontSize: 8, color: node.status === 'active' ? '#10b981' : '#ef4444' }}>
+              {node.status || 'inactive'}
+            </Text>
+          </View>
+        </TouchableOpacity>
+
+        {hasChildren && (
+          <View>{node.children.map(child => renderTreeNode(child, depth + 1, false))}</View>
+        )}
+      </View>
+    );
+  };
+
+  // ============ Small info row ============
+  const InfoRow = ({ icon, label, value }) => (
+    <View style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 6, gap: 8 }}>
+      <MaterialIcons name={icon} size={15} color="#6b7280" />
+      <Text style={{ fontFamily: Fonts.Regular, fontSize: 11, color: '#6b7280', width: 70 }}>{label}</Text>
+      <Text style={{ fontFamily: Fonts.SemiBold, fontSize: 12, color: '#1f2937', flex: 1 }} numberOfLines={2}>
+        {value}
+      </Text>
+    </View>
+  );
+
+  // ============ Per-node detail modal ============
+  const NodeDetailModal = () => {
+    const filteredReg = nodeDetailRegistered.filter(m => {
+      if (!nodeDetailSearch) return true;
+      const q = nodeDetailSearch.toLowerCase();
+      return (
+        m.fullName?.toLowerCase().includes(q) ||
+        m.email?.toLowerCase().includes(q) ||
+        m.phone?.includes(nodeDetailSearch)
+      );
+    });
+    const levelColor = nodeDetailData ? getLevelColor(nodeDetailData.level) : '#8b5cf6';
+
+    return (
+      <Modal animationType="slide" transparent visible={nodeDetailVisible} onRequestClose={() => setNodeDetailVisible(false)}>
+        <View style={styles.modalContainer}>
+          <View style={styles.nodeDetailModalContent}>
+            <View style={styles.nodeDetailHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+                <View style={[styles.nodeDetailAvatar, { backgroundColor: levelColor + '20' }]}>
+                  <Text style={[styles.nodeDetailAvatarText, { color: levelColor }]}>
+                    {nodeDetailData?.fullName?.charAt(0)?.toUpperCase() || '?'}
+                  </Text>
+                </View>
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={styles.nodeDetailName} numberOfLines={1}>
+                    {nodeDetailData?.fullName || 'Unknown'}
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 6, marginTop: 3, flexWrap: 'wrap' }}>
+                    <View style={[styles.nodeDetailLevelBadge, { backgroundColor: levelColor + '20' }]}>
+                      <MaterialIcons name="star" size={11} color={levelColor} />
+                      <Text style={[styles.nodeDetailLevelText, { color: levelColor }]}>
+                        {getLevelLabel(nodeDetailData?.level)}
+                      </Text>
+                    </View>
+                    <View style={[styles.nodeDetailStatusBadge, { backgroundColor: nodeDetailData?.status === 'active' ? '#d1fae5' : '#fee2e2' }]}>
+                      <Text style={{ fontFamily: Fonts.SemiBold, fontSize: 9, color: nodeDetailData?.status === 'active' ? '#10b981' : '#ef4444' }}>
+                        {nodeDetailData?.status || 'inactive'}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+              <TouchableOpacity onPress={() => setNodeDetailVisible(false)}>
+                <MaterialIcons name="close" size={22} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+
+            {nodeDetailLoading ? (
+              <View style={{ padding: 30, alignItems: 'center' }}>
+                <ActivityIndicator size="large" color="#FF7722" />
+                <Text style={styles.nodeMembersLoadingText}>Loading details...</Text>
+              </View>
+            ) : (
+              <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+                <Text style={styles.nodeDetailSectionTitle}>Commission Earned</Text>
+                <View style={styles.nodeDetailCommissionRow}>
+                  <View style={styles.nodeDetailCommissionCard}>
+                    <Text style={styles.nodeDetailCommissionLabel}>Total</Text>
+                    <Text style={[styles.nodeDetailCommissionValue, { color: '#10b981' }]}>
+                      ₹{nodeDetailCommission.total.toLocaleString()}
+                    </Text>
+                  </View>
+                  <View style={styles.nodeDetailCommissionCard}>
+                    <Text style={styles.nodeDetailCommissionLabel}>Pending</Text>
+                    <Text style={[styles.nodeDetailCommissionValue, { color: '#f59e0b' }]}>
+                      ₹{nodeDetailCommission.pending.toLocaleString()}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.nodeDetailCommissionRow}>
+                  <View style={styles.nodeDetailCommissionCard}>
+                    <Text style={styles.nodeDetailCommissionLabel}>Donation Comm.</Text>
+                    <Text style={[styles.nodeDetailCommissionValue, { color: '#8b5cf6' }]}>
+                      ₹{nodeDetailCommission.donation.toLocaleString()}
+                    </Text>
+                  </View>
+                  <View style={styles.nodeDetailCommissionCard}>
+                    <Text style={styles.nodeDetailCommissionLabel}>Donations Made</Text>
+                    <Text style={[styles.nodeDetailCommissionValue, { color: '#ef4444' }]}>
+                      ₹{nodeDetailDonations.toLocaleString()}
+                    </Text>
+                  </View>
+                </View>
+
+                <Text style={styles.nodeDetailSectionTitle}>Personal Details</Text>
+                <View style={styles.nodeDetailInfoCard}>
+                  <InfoRow icon="phone" label="Phone" value={nodeDetailData?.phone || '—'} />
+                  <InfoRow icon="email" label="Email" value={nodeDetailData?.email || '—'} />
+                  <InfoRow icon="location-on" label="Address" value={nodeDetailData?.address || '—'} />
+                  <InfoRow
+                    icon="calendar-today"
+                    label="Joined"
+                    value={
+                      nodeDetailData?.createdAt
+                        ? new Date(nodeDetailData.createdAt?.seconds * 1000 || nodeDetailData.createdAt).toLocaleDateString()
+                        : '—'
+                    }
+                  />
+                  <InfoRow icon="tag" label="Referral" value={nodeDetailData?.referralCode || '—'} />
+                </View>
+
+                {nodeDetailUpline.length > 0 && (
+                  <>
+                    <Text style={styles.nodeDetailSectionTitle}>Upline ({nodeDetailUpline.length})</Text>
+                    {nodeDetailUpline.map((u, i) => (
+                      <View key={u.id} style={styles.nodeDetailUplineRow}>
+                        <Text style={styles.nodeDetailUplineIndex}>{i + 1}</Text>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.nodeDetailUplineName}>{u.fullName || 'Unknown'}</Text>
+                          <Text style={styles.nodeDetailUplineMeta}>
+                            {getLevelLabel(u.level)} · {u.phone || u.email || '—'}
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </>
+                )}
+
+                <Text style={styles.nodeDetailSectionTitle}>
+                  Registered Members ({nodeDetailRegistered.length})
+                </Text>
+
+                {nodeDetailRegistered.length > 0 && (
+                  <View style={styles.nodeDetailSearchBox}>
+                    <MaterialIcons name="search" size={14} color="#9ca3af" />
+                    <TextInput
+                      style={styles.nodeDetailSearchInput}
+                      placeholder="Search members..."
+                      placeholderTextColor="#9ca3af"
+                      value={nodeDetailSearch}
+                      onChangeText={setNodeDetailSearch}
+                    />
+                  </View>
+                )}
+
+                {filteredReg.length === 0 ? (
+                  <View style={{ alignItems: 'center', paddingVertical: 20 }}>
+                    <MaterialIcons name="people-outline" size={36} color="#d1d5db" />
+                    <Text style={styles.detailEmptyText}>
+                      {nodeDetailSearch ? 'No matches' : 'No registered members'}
+                    </Text>
+                  </View>
+                ) : (
+                  filteredReg.map(m => (
+                    <View key={m.id} style={styles.nodeDetailRegRow}>
+                      <View style={styles.nodeDetailRegAvatar}>
+                        <Text style={styles.nodeDetailRegAvatarText}>
+                          {m.fullName?.charAt(0)?.toUpperCase() || '?'}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.nodeDetailRegName} numberOfLines={1}>{m.fullName || 'Unknown'}</Text>
+                        <Text style={styles.nodeDetailRegMeta} numberOfLines={1}>{m.phone || m.email || '—'}</Text>
+                      </View>
+                      <View style={[styles.nodeDetailRegBadge, { backgroundColor: m.status === 'active' ? '#d1fae5' : '#fee2e2' }]}>
+                        <Text style={{ fontFamily: Fonts.SemiBold, fontSize: 8, color: m.status === 'active' ? '#10b981' : '#ef4444' }}>
+                          {m.status || 'inactive'}
+                        </Text>
+                      </View>
+                    </View>
+                  ))
+                )}
+              </ScrollView>
+            )}
+
+            <TouchableOpacity style={styles.nodeDetailCloseBtn} onPress={() => setNodeDetailVisible(false)}>
+              <Text style={styles.nodeDetailCloseBtnText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    );
+  };
+  // ================================================================
+  // EDIT WORKING MEMBER MODAL
+  // ================================================================
+  const EditMemberModal = () => (
+    <Modal
+      animationType="slide"
+      transparent
+      visible={editModalVisible}
+      onRequestClose={() => !savingEdit && setEditModalVisible(false)}
+    >
+      <View style={styles.modalContainer}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={[styles.modalTitle, { fontSize: isSmallDevice ? 16 : 18 }]}>
+              Edit Working Member
+            </Text>
+            <TouchableOpacity
+              onPress={() => !savingEdit && setEditModalVisible(false)}
+              disabled={savingEdit}
+            >
+              <MaterialIcons name="close" size={24} color="#6B7280" />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: '85%' }}>
+            {/* ------- Personal ------- */}
+            <View style={styles.formSection}>
+              <Text style={[styles.formSectionTitle, { fontSize: isSmallDevice ? 13 : 14 }]}>
+                Personal Information
+              </Text>
+
+              <View style={styles.formField}>
+                <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Full Name *</Text>
+                <TextInput
+                  style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+                  value={editForm.fullName}
+                  onChangeText={t => setEditForm({ ...editForm, fullName: t })}
+                  placeholder="Full name"
+                  placeholderTextColor="#9ca3af"
+                  editable={!savingEdit}
+                />
+              </View>
+
+              <View style={styles.formField}>
+                <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Email *</Text>
+                <TextInput
+                  style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+                  value={editForm.email}
+                  onChangeText={t => setEditForm({ ...editForm, email: t })}
+                  placeholder="Email"
+                  placeholderTextColor="#9ca3af"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  editable={!savingEdit}
+                />
+              </View>
+
+              <View style={styles.formField}>
+                <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Phone</Text>
+                <TextInput
+                  style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+                  value={editForm.phone}
+                  onChangeText={t => setEditForm({ ...editForm, phone: t })}
+                  placeholder="Phone"
+                  placeholderTextColor="#9ca3af"
+                  keyboardType="phone-pad"
+                  editable={!savingEdit}
+                />
+              </View>
+
+              <View style={styles.formRow}>
+                <View style={[styles.formField, { flex: 1, marginRight: 8 }]}>
+                  <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Gender</Text>
+                  <TextInput
+                    style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+                    value={editForm.gender}
+                    onChangeText={t => setEditForm({ ...editForm, gender: t })}
+                    placeholder="Male/Female/Other"
+                    placeholderTextColor="#9ca3af"
+                    editable={!savingEdit}
+                  />
+                </View>
+                <View style={[styles.formField, { flex: 1 }]}>
+                  <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>DOB</Text>
+                  <TextInput
+                    style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+                    value={editForm.dob}
+                    onChangeText={t => setEditForm({ ...editForm, dob: t })}
+                    placeholder="DD/MM/YYYY"
+                    placeholderTextColor="#9ca3af"
+                    editable={!savingEdit}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.formRow}>
+                <View style={[styles.formField, { flex: 1, marginRight: 8 }]}>
+                  <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Father's Name</Text>
+                  <TextInput
+                    style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+                    value={editForm.fatherName}
+                    onChangeText={t => setEditForm({ ...editForm, fatherName: t })}
+                    placeholder="Father's name"
+                    placeholderTextColor="#9ca3af"
+                    editable={!savingEdit}
+                  />
+                </View>
+                <View style={[styles.formField, { flex: 1 }]}>
+                  <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Mother's Name</Text>
+                  <TextInput
+                    style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+                    value={editForm.motherName}
+                    onChangeText={t => setEditForm({ ...editForm, motherName: t })}
+                    placeholder="Mother's name"
+                    placeholderTextColor="#9ca3af"
+                    editable={!savingEdit}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.formRow}>
+                <View style={[styles.formField, { flex: 1, marginRight: 8 }]}>
+                  <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Aadhar</Text>
+                  <TextInput
+                    style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+                    value={editForm.aadharNumber}
+                    onChangeText={t => setEditForm({ ...editForm, aadharNumber: t })}
+                    placeholder="Aadhar number"
+                    placeholderTextColor="#9ca3af"
+                    keyboardType="numeric"
+                    editable={!savingEdit}
+                  />
+                </View>
+                <View style={[styles.formField, { flex: 1 }]}>
+                  <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>PAN</Text>
+                  <TextInput
+                    style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+                    value={editForm.panNumber}
+                    onChangeText={t => setEditForm({ ...editForm, panNumber: t })}
+                    placeholder="PAN number"
+                    placeholderTextColor="#9ca3af"
+                    autoCapitalize="characters"
+                    editable={!savingEdit}
+                  />
+                </View>
+              </View>
+            </View>
+
+            {/* ------- Address ------- */}
+            <View style={styles.formSection}>
+              <Text style={[styles.formSectionTitle, { fontSize: isSmallDevice ? 13 : 14 }]}>
+                Address Information
+              </Text>
+
+              <View style={styles.formField}>
+                <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Address</Text>
+                <TextInput
+                  style={[styles.formInput, styles.formTextArea, { fontSize: isSmallDevice ? 13 : 14 }]}
+                  value={editForm.address}
+                  onChangeText={t => setEditForm({ ...editForm, address: t })}
+                  placeholder="Address"
+                  placeholderTextColor="#9ca3af"
+                  multiline
+                  numberOfLines={2}
+                  editable={!savingEdit}
+                />
+              </View>
+
+              <View style={styles.formRow}>
+                <View style={[styles.formField, { flex: 1, marginRight: 8 }]}>
+                  <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Village</Text>
+                  <TextInput
+                    style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+                    value={editForm.village}
+                    onChangeText={t => setEditForm({ ...editForm, village: t })}
+                    placeholder="Village"
+                    placeholderTextColor="#9ca3af"
+                    editable={!savingEdit}
+                  />
+                </View>
+                <View style={[styles.formField, { flex: 1 }]}>
+                  <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Post Office</Text>
+                  <TextInput
+                    style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+                    value={editForm.postOffice}
+                    onChangeText={t => setEditForm({ ...editForm, postOffice: t })}
+                    placeholder="Post Office"
+                    placeholderTextColor="#9ca3af"
+                    editable={!savingEdit}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.formRow}>
+                <View style={[styles.formField, { flex: 1, marginRight: 8 }]}>
+                  <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Thana</Text>
+                  <TextInput
+                    style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+                    value={editForm.thana}
+                    onChangeText={t => setEditForm({ ...editForm, thana: t })}
+                    placeholder="Thana"
+                    placeholderTextColor="#9ca3af"
+                    editable={!savingEdit}
+                  />
+                </View>
+                <View style={[styles.formField, { flex: 1 }]}>
+                  <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>District</Text>
+                  <TextInput
+                    style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+                    value={editForm.district}
+                    onChangeText={t => setEditForm({ ...editForm, district: t })}
+                    placeholder="District"
+                    placeholderTextColor="#9ca3af"
+                    editable={!savingEdit}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.formRow}>
+                <View style={[styles.formField, { flex: 1, marginRight: 8 }]}>
+                  <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>State</Text>
+                  <TextInput
+                    style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+                    value={editForm.state}
+                    onChangeText={t => setEditForm({ ...editForm, state: t })}
+                    placeholder="State"
+                    placeholderTextColor="#9ca3af"
+                    editable={!savingEdit}
+                  />
+                </View>
+                <View style={[styles.formField, { flex: 1 }]}>
+                  <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>PIN Code</Text>
+                  <TextInput
+                    style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+                    value={editForm.pinCode}
+                    onChangeText={t => setEditForm({ ...editForm, pinCode: t })}
+                    placeholder="PIN"
+                    placeholderTextColor="#9ca3af"
+                    keyboardType="numeric"
+                    editable={!savingEdit}
+                  />
+                </View>
+              </View>
+            </View>
+
+            {/* ------- Work ------- */}
+            <View style={styles.formSection}>
+              <Text style={[styles.formSectionTitle, { fontSize: isSmallDevice ? 13 : 14 }]}>
+                Employment & Account
+              </Text>
+
+              <View style={styles.formRow}>
+                <View style={[styles.formField, { flex: 1, marginRight: 8 }]}>
+                  <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Position</Text>
+                  <TextInput
+                    style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+                    value={editForm.position}
+                    onChangeText={t => setEditForm({ ...editForm, position: t })}
+                    placeholder="Position"
+                    placeholderTextColor="#9ca3af"
+                    editable={!savingEdit}
+                  />
+                </View>
+                <View style={[styles.formField, { flex: 1 }]}>
+                  <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Department</Text>
+                  <TextInput
+                    style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+                    value={editForm.department}
+                    onChangeText={t => setEditForm({ ...editForm, department: t })}
+                    placeholder="Department"
+                    placeholderTextColor="#9ca3af"
+                    editable={!savingEdit}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.formRow}>
+                <View style={[styles.formField, { flex: 1, marginRight: 8 }]}>
+                  <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Employee ID</Text>
+                  <TextInput
+                    style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+                    value={editForm.employeeId}
+                    onChangeText={t => setEditForm({ ...editForm, employeeId: t })}
+                    placeholder="Employee ID"
+                    placeholderTextColor="#9ca3af"
+                    editable={!savingEdit}
+                  />
+                </View>
+                <View style={[styles.formField, { flex: 1 }]}>
+                  <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Reporting To</Text>
+                  <TextInput
+                    style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+                    value={editForm.reportingTo}
+                    onChangeText={t => setEditForm({ ...editForm, reportingTo: t })}
+                    placeholder="Reporting to"
+                    placeholderTextColor="#9ca3af"
+                    editable={!savingEdit}
+                  />
+                </View>
+              </View>
+
+              {/* Role */}
+              <View style={styles.formField}>
+                <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Role</Text>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {[
+                    { key: 'working', label: 'Working' },
+                    { key: 'member', label: 'Member' },
+                    { key: 'admin', label: 'Admin' },
+                  ].map(r => {
+                    const active = editForm.role === r.key;
+                    return (
+                      <TouchableOpacity
+                        key={r.key}
+                        onPress={() => setEditForm({ ...editForm, role: r.key })}
+                        disabled={savingEdit}
+                        style={{
+                          flex: 1,
+                          paddingVertical: 8,
+                          borderRadius: 8,
+                          borderWidth: 1,
+                          borderColor: active ? '#FF7722' : '#e5e7eb',
+                          backgroundColor: active ? '#FF7722' : '#ffffff',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <Text style={{
+                          fontFamily: Fonts.SemiBold,
+                          fontSize: 12,
+                          color: active ? '#ffffff' : '#6b7280',
+                        }}>
+                          {r.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              {/* Status */}
+              <View style={styles.formField}>
+                <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Status</Text>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {[
+                    { key: 'active', label: 'Active' },
+                    { key: 'pending', label: 'Pending' },
+                    { key: 'suspended', label: 'Suspended' },
+                  ].map(s => {
+                    const active = editForm.status === s.key;
+                    return (
+                      <TouchableOpacity
+                        key={s.key}
+                        onPress={() => setEditForm({ ...editForm, status: s.key })}
+                        disabled={savingEdit}
+                        style={{
+                          flex: 1,
+                          paddingVertical: 8,
+                          borderRadius: 8,
+                          borderWidth: 1,
+                          borderColor: active ? '#10b981' : '#e5e7eb',
+                          backgroundColor: active ? '#10b981' : '#ffffff',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <Text style={{
+                          fontFamily: Fonts.SemiBold,
+                          fontSize: 12,
+                          color: active ? '#ffffff' : '#6b7280',
+                        }}>
+                          {s.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              {/* Level */}
+              <View style={styles.formField}>
+                <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Level</Text>
+                <View style={styles.levelOptionsGrid}>
+                  {(dynamicLevels.length > 0 ? dynamicLevels : getDefaultLevels()).map(level => {
+                    const active = editForm.level === level.id;
+                    const color = getLevelColor(level.id);
+                    return (
+                      <TouchableOpacity
+                        key={level.id}
+                        onPress={() => setEditForm({ ...editForm, level: level.id })}
+                        disabled={savingEdit}
+                        style={[
+                          styles.levelOption,
+                          active && styles.levelOptionActive,
+                          { borderColor: active ? color : '#e5e7eb' },
+                        ]}
+                      >
+                        <MaterialIcons
+                          name={getLevelIcon(level.id)}
+                          size={isSmallDevice ? 10 : 13}
+                          color={active ? '#ffffff' : color}
+                        />
+                        <Text style={[
+                          styles.levelOptionText,
+                          active && styles.levelOptionTextActive,
+                          { fontSize: isSmallDevice ? 9 : 10 },
+                        ]}>
+                          {level.id}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            </View>
+          </ScrollView>
+
+          {/* Save / Cancel */}
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+            <TouchableOpacity
+              onPress={() => !savingEdit && setEditModalVisible(false)}
+              disabled={savingEdit}
+              style={{
+                flex: 1,
+                paddingVertical: 12,
+                borderRadius: 8,
+                backgroundColor: '#f3f4f6',
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ fontFamily: Fonts.SemiBold, fontSize: 14, color: '#6b7280' }}>
+                Cancel
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleSaveEdit}
+              disabled={savingEdit}
+              style={{
+                flex: 1,
+                paddingVertical: 12,
+                borderRadius: 8,
+                backgroundColor: '#FF7722',
+                alignItems: 'center',
+                opacity: savingEdit ? 0.6 : 1,
+              }}
+            >
+              {savingEdit ? (
+                <ActivityIndicator size="small" color="#ffffff" />
+              ) : (
+                <Text style={{ fontFamily: Fonts.SemiBold, fontSize: 14, color: '#ffffff' }}>
+                  Save Changes
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer} key={renderKey}>
+        <ActivityIndicator size="large" color="#FF7722" />
+        <Text style={[styles.loadingText, { fontSize: isSmallDevice ? 13 : 14 }]}>{translations.loadingWorkingMembers}</Text>
+      </View>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.safeArea} edges={['top']} key={renderKey}>
+      <View style={styles.container}>
+        {/* Saffron Header */}
+        <View style={styles.headerCard}>
+          <View style={styles.headerTop}>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+              <MaterialIcons name="arrow-back" size={24} color="#ffffff" />
+            </TouchableOpacity>
+            <Text style={[styles.headerTitle, { fontSize: isSmallDevice ? 18 : 20 }]}>{translations.workingMembers}</Text>
+            <View style={styles.headerRight}>
+              <TouchableOpacity 
+                style={styles.addButton}
+                onPress={() => {
+                  resetNewMemberForm();
+                  setParentMemberId(null);
+                  setParentMemberName('');
+                  setSearchParent('');
+                  setRegistrationMethod('email');
+                  setShowRegistrationMethodModal(true);
+                  fetchAvailableParents('I');
+                }}
+              >
+                <MaterialIcons name="add" size={24} color="#ffffff" />
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity 
+              style={styles.refreshButton}
+              onPress={onRefresh}
+            >
+              <MaterialIcons name="refresh" size={24} color="#ffffff" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.searchContainer}>
+            <MaterialIcons name="search" size={20} color="#9ca3af" />
+            <TextInput
+              style={[styles.searchInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+              placeholder={translations.searchWorkingMembers}
+              placeholderTextColor="#9ca3af"
+              value={search}
+              onChangeText={handleSearch}
+            />
+            {search.length > 0 && (
+              <TouchableOpacity onPress={() => handleSearch('')}>
+                <MaterialIcons name="close" size={20} color="#9ca3af" />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <View style={styles.statusFilterWrapper}>
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.statusFilterScrollContent}
+              style={{ flexGrow: 0 }}
+            >
+              <StatusFilterChip
+                label={translations.all}
+                count={getStatusCount('all')}
+                active={filterStatus === 'all'}
+                onPress={() => handleFilterStatus('all')}
+              />
+              <StatusFilterChip
+                label={translations.active}
+                count={getStatusCount('active')}
+                active={filterStatus === 'active'}
+                onPress={() => handleFilterStatus('active')}
+              />
+              <StatusFilterChip
+                label={translations.pending}
+                count={getStatusCount('pending')}
+                active={filterStatus === 'pending'}
+                onPress={() => handleFilterStatus('pending')}
+              />
+              <StatusFilterChip
+                label={translations.suspended}
+                count={getStatusCount('suspended')}
+                active={filterStatus === 'suspended'}
+                onPress={() => handleFilterStatus('suspended')}
+              />
+            </ScrollView>
+          </View>
+
+          <View style={styles.statsWrapper}>
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false} 
+              contentContainerStyle={styles.statsScrollContent}
+              style={{ flexGrow: 0 }}
+            >
+              <StatCard 
+                label={translations.all} 
+                count={workingMembers.length} 
+                icon="people" 
+                color="#ffffff" 
+                active={filterLevel === 'All'}
+                onPress={() => handleFilterLevel('All')}
+              />
+              
+              {dynamicLevels.length > 0 ? (
+                dynamicLevels.map((level) => {
+                  const count = workingMembers.filter(m => m.level === level.id).length;
+                  const levelName = level.name || level.id;
+                  return (
+                    <StatCard 
+                      key={level.id}
+                      label={levelName}
+                      count={count}
+                      icon="star" 
+                      color="#ffffff"
+                      active={filterLevel === levelName}
+                      onPress={() => handleFilterLevel(levelName)}
+                    />
+                  );
+                })
+              ) : (
+                ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'].map((key) => {
+                  const level = getLevelDetails(key);
+                  const count = workingMembers.filter(m => m.level === key).length;
+                  return (
+                    <StatCard 
+                      key={key}
+                      label={level.title}
+                      count={count}
+                      icon="star" 
+                      color="#ffffff"
+                      active={filterLevel === level.title}
+                      onPress={() => handleFilterLevel(level.title)}
+                    />
+                  );
+                })
+              )}
+            </ScrollView>
+          </View>
+        </View>
+
+        <FlatList
+          data={filteredMembers}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => <WorkingMemberCard member={item} />}
+          showsVerticalScrollIndicator={true}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#FF7722']} />
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <MaterialIcons name="work" size={44} color="#D1D5DB" />
+              <Text style={[styles.emptyStateText, { fontSize: isSmallDevice ? 15 : 16 }]}>
+                {translations.noWorkingMembers}
+              </Text>
+              <Text style={[styles.emptyStateSubtext, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                {translations.noWorkingMembersSubtext}
+              </Text>
+            </View>
+          }
+          contentContainerStyle={styles.listContent}
+          style={styles.flatList}
+          nestedScrollEnabled={true}
+          keyboardShouldPersistTaps="handled"
+        />
+
+        {/* Referral Code Modal */}
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={referralModalVisible}
+          onRequestClose={() => {
+            setReferralModalVisible(false);
+            setSelectedMemberForReferral(null);
+          }}
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={[styles.modalTitle, { fontSize: isSmallDevice ? 16 : 18 }]}>
+                  Referral Code
+                </Text>
+                <TouchableOpacity onPress={() => {
+                  setReferralModalVisible(false);
+                  setSelectedMemberForReferral(null);
+                }}>
+                  <MaterialIcons name="close" size={24} color="#6B7280" />
+                </TouchableOpacity>
+              </View>
+
+              {selectedMemberForReferral && (
+                <>
+                  <View style={styles.referralMemberInfo}>
+                    <Text style={[styles.referralMemberName, { fontSize: isSmallDevice ? 16 : 18 }]}>
+                      {selectedMemberForReferral.fullName}
+                    </Text>
+                    <Text style={[styles.referralMemberLevel, { fontSize: isSmallDevice ? 12 : 14 }]}>
+                      Level: {getLevelLabel(selectedMemberForReferral.level)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.referralCodeContainer}>
+                    {referralCode ? (
+                      <>
+                        <Text style={[styles.referralCodeLabel, { fontSize: isSmallDevice ? 12 : 14 }]}>
+                          Your Referral Code
+                        </Text>
+                        <View style={styles.referralCodeDisplay}>
+                          <Text style={[styles.referralCodeText, { fontSize: isSmallDevice ? 20 : 24 }]}>
+                            {referralCode}
+                          </Text>
+                        </View>
+                        <Text style={[styles.referralCodeNote, { fontSize: isSmallDevice ? 10 : 12 }]}>
+                          Share this code with new members to earn commissions
+                        </Text>
+                        <TouchableOpacity 
+                          style={styles.referralShareButton}
+                          onPress={() => {
+                            const message = `Join Kabir Sat Dharam Foundation using my referral code: ${referralCode}\n\nDownload the app to get started!`;
+                            Alert.alert('Share Code', message);
+                          }}
+                        >
+                          <MaterialIcons name="share" size={20} color="#ffffff" />
+                          <Text style={[styles.referralShareText, { fontSize: isSmallDevice ? 14 : 16 }]}>
+                            Share Code
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                          style={[styles.referralRegenerateButton, generatingReferral && { opacity: 0.6 }]}
+                          onPress={handleGenerateReferral}
+                          disabled={generatingReferral}
+                        >
+                          {generatingReferral ? (
+                            <ActivityIndicator size="small" color="#ffffff" />
+                          ) : (
+                            <>
+                              <MaterialIcons name="refresh" size={18} color="#ffffff" />
+                              <Text style={[styles.referralGenerateText, { fontSize: isSmallDevice ? 12 : 14 }]}>
+                                Generate New Code
+                              </Text>
+                            </>
+                          )}
+                        </TouchableOpacity>
+                      </>
+                    ) : (
+                      <>
+                        <Text style={[styles.referralNoCodeText, { fontSize: isSmallDevice ? 14 : 16 }]}>
+                          No referral code generated yet
+                        </Text>
+                        <Text style={[styles.referralNoCodeSubtext, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                          Generate a unique referral code for this member
+                        </Text>
+                        <TouchableOpacity 
+                          style={[styles.referralGenerateButton, generatingReferral && { opacity: 0.6 }]}
+                          onPress={handleGenerateReferral}
+                          disabled={generatingReferral}
+                        >
+                          {generatingReferral ? (
+                            <ActivityIndicator size="small" color="#ffffff" />
+                          ) : (
+                            <>
+                              <MaterialIcons name="refresh" size={20} color="#ffffff" />
+                              <Text style={[styles.referralGenerateText, { fontSize: isSmallDevice ? 14 : 16 }]}>
+                                Generate Referral Code
+                              </Text>
+                            </>
+                          )}
+                        </TouchableOpacity>
+                      </>
+                    )}
+                  </View>
+
+                  <TouchableOpacity 
+                    style={styles.closeButton}
+                    onPress={() => {
+                      setReferralModalVisible(false);
+                      setSelectedMemberForReferral(null);
+                    }}
+                  >
+                    <Text style={[styles.closeButtonText, { fontSize: isSmallDevice ? 13 : 14 }]}>Close</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          </View>
+        </Modal>
+
+        {/* Assign Member Modal */}
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={assignModalVisible}
+          onRequestClose={() => {
+            setAssignModalVisible(false);
+            setSelectedMemberForAssign(null);
+            setSelectedSubMemberId(null);
+            setSelectedSubMemberName('');
+          }}
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={[styles.modalTitle, { fontSize: isSmallDevice ? 16 : 18 }]}>
+                  Assign Member
+                </Text>
+                <TouchableOpacity onPress={() => {
+                  setAssignModalVisible(false);
+                  setSelectedMemberForAssign(null);
+                }}>
+                  <MaterialIcons name="close" size={24} color="#6B7280" />
+                </TouchableOpacity>
+              </View>
+
+              {selectedMemberForAssign && (
+                <>
+                  <View style={styles.assignParentInfo}>
+                    <Text style={styles.assignLabel}>Parent:</Text>
+                    <Text style={styles.assignParentName}>{selectedMemberForAssign.fullName}</Text>
+                    <Text style={styles.assignParentLevel}>
+                      Level: {getLevelLabel(selectedMemberForAssign.level)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.assignDivider} />
+
+                  <Text style={styles.assignSubtitle}>
+                    Select a member to assign under {selectedMemberForAssign.fullName}
+                  </Text>
+
+                  <View style={styles.assignSearchContainer}>
+                    <TextInput
+                      style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14, flex: 1 }]}
+                      placeholder="Search member by name..."
+                      placeholderTextColor="#9ca3af"
+                      value={searchSubMember}
+                      onChangeText={setSearchSubMember}
+                    />
+                    <TouchableOpacity
+                      style={styles.parentSearchButton}
+                      onPress={() => {
+                        if (searchSubMember.trim()) {
+                          const filtered = availableSubMembers.filter(m => 
+                            m.fullName.toLowerCase().includes(searchSubMember.toLowerCase())
+                          );
+                          setAvailableSubMembers(filtered);
+                        } else {
+                          fetchAvailableSubMembers(selectedMemberForAssign.level);
+                        }
+                      }}
+                    >
+                      <MaterialIcons name="search" size={20} color="#ffffff" />
+                    </TouchableOpacity>
+                  </View>
+
+                  {availableSubMembers.length === 0 ? (
+                    <View style={styles.assignEmptyState}>
+                      <MaterialIcons name="people-outline" size={40} color="#d1d5db" />
+                      <Text style={styles.assignEmptyText}>
+                        No available members to assign
+                      </Text>
+                      <Text style={styles.assignEmptySubtext}>
+                        All members at lower levels are already assigned
+                      </Text>
+                    </View>
+                  ) : (
+                    <ScrollView style={styles.assignListContainer}>
+                      {availableSubMembers.map((member) => (
+                        <TouchableOpacity
+                          key={member.id}
+                          style={[
+                            styles.assignItem,
+                            selectedSubMemberId === member.id && styles.assignItemActive
+                          ]}
+                          onPress={() => {
+                            setSelectedSubMemberId(member.id);
+                            setSelectedSubMemberName(member.fullName);
+                          }}
+                        >
+                          <View style={styles.assignItemLeft}>
+                            <View style={styles.assignItemAvatar}>
+                              <Text style={styles.assignItemAvatarText}>
+                                {member.fullName.charAt(0).toUpperCase()}
+                              </Text>
+                            </View>
+                            <View>
+                              <Text style={styles.assignItemName}>{member.fullName}</Text>
+                              <Text style={styles.assignItemLevel}>
+                                Level: {member.levelName}
+                              </Text>
+                            </View>
+                          </View>
+                          {selectedSubMemberId === member.id && (
+                            <MaterialIcons name="check-circle" size={24} color="#10b981" />
+                          )}
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  )}
+
+                  {selectedSubMemberId && (
+                    <View style={styles.assignSelectedContainer}>
+                      <MaterialIcons name="link" size={16} color="#10b981" />
+                      <Text style={styles.assignSelectedText}>
+                        Assigning: {selectedSubMemberName}
+                      </Text>
+                    </View>
+                  )}
+
+                  <View style={styles.assignActions}>
+                    <TouchableOpacity
+                      style={[styles.assignButton, styles.assignCancelButton]}
+                      onPress={() => {
+                        setAssignModalVisible(false);
+                        setSelectedMemberForAssign(null);
+                        setSelectedSubMemberId(null);
+                        setSelectedSubMemberName('');
+                      }}
+                    >
+                      <Text style={styles.assignCancelText}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.assignButton, 
+                        styles.assignConfirmButton,
+                        (!selectedSubMemberId || savingMember) && { opacity: 0.6 }
+                      ]}
+                      onPress={handleAssignMember}
+                      disabled={!selectedSubMemberId || savingMember}
+                    >
+                      {savingMember ? (
+                        <ActivityIndicator size="small" color="#ffffff" />
+                      ) : (
+                        <>
+                          <MaterialIcons name="check" size={20} color="#ffffff" />
+                          <Text style={styles.assignConfirmText}>Assign</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+            </View>
+          </View>
+        </Modal>
+
+        {/* Registration Method Selection Modal */}
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={showRegistrationMethodModal}
+          onRequestClose={() => setShowRegistrationMethodModal(false)}
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={[styles.modalTitle, { fontSize: isSmallDevice ? 16 : 18 }]}>
+                  Registration Method
+                </Text>
+                <TouchableOpacity onPress={() => setShowRegistrationMethodModal(false)}>
+                  <MaterialIcons name="close" size={24} color="#6B7280" />
+                </TouchableOpacity>
+              </View>
+
+              <Text style={[styles.modalSubText, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                Choose how you want to register this working member
+              </Text>
+
+              <TouchableOpacity 
+                style={[styles.methodCard, registrationMethod === 'email' && styles.methodCardActive]}
+                onPress={() => {
+                  setRegistrationMethod('email');
+                  setShowRegistrationMethodModal(false);
+                  setAddMemberModalVisible(true);
+                  resetNewMemberForm();
+                  fetchAvailableParents(newMemberData.level || 'I');
+                }}
+              >
+                <View style={[styles.methodIcon, { backgroundColor: registrationMethod === 'email' ? '#FF7722' : '#e5e7eb' }]}>
+                  <MaterialIcons name="email" size={24} color={registrationMethod === 'email' ? '#ffffff' : '#6b7280'} />
+                </View>
+                <View style={styles.methodContent}>
+                  <Text style={[styles.methodTitle, registrationMethod === 'email' && styles.methodTitleActive]}>
+                    Email Registration
+                  </Text>
+                  <Text style={styles.methodDescription}>
+                    Register using email and password
+                  </Text>
+                </View>
+                {registrationMethod === 'email' && (
+                  <MaterialIcons name="check-circle" size={20} color="#FF7722" />
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.methodCard, registrationMethod === 'phone' && styles.methodCardActive]}
+                onPress={() => {
+                  setRegistrationMethod('phone');
+                  setShowRegistrationMethodModal(false);
+                  setAddMemberModalVisible(true);
+                  resetNewMemberForm();
+                  fetchAvailableParents(newMemberData.level || 'I');
+                }}
+              >
+                <View style={[styles.methodIcon, { backgroundColor: registrationMethod === 'phone' ? '#10b981' : '#e5e7eb' }]}>
+                  <MaterialIcons name="phone" size={24} color={registrationMethod === 'phone' ? '#ffffff' : '#6b7280'} />
+                </View>
+                <View style={styles.methodContent}>
+                  <Text style={[styles.methodTitle, registrationMethod === 'phone' && styles.methodTitleActive]}>
+                    Phone Registration
+                  </Text>
+                  <Text style={styles.methodDescription}>
+                    Register using phone number and password
+                  </Text>
+                </View>
+                {registrationMethod === 'phone' && (
+                  <MaterialIcons name="check-circle" size={20} color="#10b981" />
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.closeButton}
+                onPress={() => setShowRegistrationMethodModal(false)}
+              >
+                <Text style={[styles.closeButtonText, { fontSize: isSmallDevice ? 13 : 14 }]}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Add Working Member Modal */}
+<Modal
+  animationType="slide"
+  transparent={true}
+  visible={addMemberModalVisible}
+  onRequestClose={() => {
+    setAddMemberModalVisible(false);
+    resetNewMemberForm();
+  }}
+>
+  <TouchableOpacity 
+    style={styles.modalContainer} 
+    activeOpacity={1} 
+    onPress={() => {
+      setAddMemberModalVisible(false);
+      resetNewMemberForm();
+    }}
+  >
+    <TouchableOpacity 
+      style={styles.modalContent} 
+      activeOpacity={1} 
+      onPress={(e) => e.stopPropagation()}
+    >
+      <ScrollView 
+        showsVerticalScrollIndicator={true}
+        contentContainerStyle={{ paddingBottom: 30 }}
+      >
+        <View style={styles.modalHeader}>
+          <Text style={[styles.modalTitle, { fontSize: isSmallDevice ? 16 : 18 }]}>
+            Add Working Member
+          </Text>
+          <TouchableOpacity 
+            style={[styles.modalSaveButton, savingMember && { opacity: 0.6 }]}
+            onPress={handleAddWorkingMember}
+            disabled={savingMember}
+          >
+            {savingMember ? (
+              <ActivityIndicator size="small" color="#ffffff" />
+            ) : (
+              <Text style={styles.modalSaveButtonText}>Save</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {/* Personal Information */}
+        <View style={styles.formSection}>
+          <Text style={[styles.formSectionTitle, { fontSize: isSmallDevice ? 13 : 14 }]}>
+            Personal Information
+          </Text>
+          
+          <View style={styles.formField}>
+            <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Full Name *</Text>
+            <TextInput
+              style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+              value={newMemberData.fullName}
+              onChangeText={(text) => setNewMemberData({...newMemberData, fullName: text})}
+              placeholder="Enter full name"
+              placeholderTextColor="#9ca3af"
+            />
+          </View>
+
+          <View style={styles.formField}>
+            <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Email *</Text>
+            <TextInput
+              style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+              value={newMemberData.email}
+              onChangeText={(text) => setNewMemberData({...newMemberData, email: text})}
+              placeholder="Enter email"
+              placeholderTextColor="#9ca3af"
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+          </View>
+
+          <View style={styles.formField}>
+            <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Phone *</Text>
+            <TextInput
+              style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+              value={newMemberData.phone}
+              onChangeText={(text) => setNewMemberData({...newMemberData, phone: text})}
+              placeholder="Enter phone number"
+              placeholderTextColor="#9ca3af"
+              keyboardType="phone-pad"
+              maxLength={10}
+            />
+          </View>
+
+          {/* Password Field with Show/Hide Button */}
+          <View style={styles.formField}>
+            <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Password * (min 6 chars)</Text>
+            <View style={styles.passwordContainer}>
+              <TextInput
+                style={[styles.passwordInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+                value={newMemberData.password}
+                onChangeText={(text) => setNewMemberData({...newMemberData, password: text})}
+                placeholder="Enter password"
+                placeholderTextColor="#9ca3af"
+                secureTextEntry={!showPassword}
+              />
+              <TouchableOpacity 
+                style={styles.eyeButton}
+                onPress={() => setShowPassword(!showPassword)}
+                activeOpacity={0.7}
+              >
+                <MaterialIcons 
+                  name={showPassword ? "visibility" : "visibility-off"} 
+                  size={22} 
+                  color="#6b7280" 
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.formRow}>
+            <View style={[styles.formField, { flex: 1, marginRight: 8 }]}>
+              <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Gender</Text>
+              <TextInput
+                style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+                value={newMemberData.gender}
+                onChangeText={(text) => setNewMemberData({...newMemberData, gender: text})}
+                placeholder="Male/Female"
+                placeholderTextColor="#9ca3af"
+              />
+            </View>
+            <View style={[styles.formField, { flex: 1 }]}>
+              <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Date of Birth</Text>
+              <TextInput
+                style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+                value={newMemberData.dob}
+                onChangeText={(text) => setNewMemberData({...newMemberData, dob: text})}
+                placeholder="DD/MM/YYYY"
+                placeholderTextColor="#9ca3af"
+              />
+            </View>
+          </View>
+
+          <View style={styles.formField}>
+            <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Aadhar Number</Text>
+            <TextInput
+              style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+              value={newMemberData.aadharNumber}
+              onChangeText={(text) => setNewMemberData({...newMemberData, aadharNumber: text})}
+              placeholder="Enter Aadhar number"
+              placeholderTextColor="#9ca3af"
+              keyboardType="numeric"
+              maxLength={12}
+            />
+          </View>
+        </View>
+
+        {/* Address Information */}
+        <View style={styles.formSection}>
+          <Text style={[styles.formSectionTitle, { fontSize: isSmallDevice ? 13 : 14 }]}>
+            Address Information
+          </Text>
+
+          <View style={styles.formField}>
+            <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Address</Text>
+            <TextInput
+              style={[styles.formInput, styles.formTextArea, { fontSize: isSmallDevice ? 13 : 14 }]}
+              value={newMemberData.address}
+              onChangeText={(text) => setNewMemberData({...newMemberData, address: text})}
+              placeholder="Enter address"
+              placeholderTextColor="#9ca3af"
+              multiline
+              numberOfLines={2}
+            />
+          </View>
+
+          <View style={styles.formRow}>
+            <View style={[styles.formField, { flex: 1, marginRight: 8 }]}>
+              <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Village</Text>
+              <TextInput
+                style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+                value={newMemberData.village}
+                onChangeText={(text) => setNewMemberData({...newMemberData, village: text})}
+                placeholder="Village"
+                placeholderTextColor="#9ca3af"
+              />
+            </View>
+            <View style={[styles.formField, { flex: 1 }]}>
+              <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Post Office</Text>
+              <TextInput
+                style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+                value={newMemberData.postOffice}
+                onChangeText={(text) => setNewMemberData({...newMemberData, postOffice: text})}
+                placeholder="Post Office"
+                placeholderTextColor="#9ca3af"
+              />
+            </View>
+          </View>
+
+          <View style={styles.formRow}>
+            <View style={[styles.formField, { flex: 1, marginRight: 8 }]}>
+              <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Thana</Text>
+              <TextInput
+                style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+                value={newMemberData.thana}
+                onChangeText={(text) => setNewMemberData({...newMemberData, thana: text})}
+                placeholder="Thana"
+                placeholderTextColor="#9ca3af"
+              />
+            </View>
+            <View style={[styles.formField, { flex: 1 }]}>
+              <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>District</Text>
+              <TextInput
+                style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+                value={newMemberData.district}
+                onChangeText={(text) => setNewMemberData({...newMemberData, district: text})}
+                placeholder="District"
+                placeholderTextColor="#9ca3af"
+              />
+            </View>
+          </View>
+
+          <View style={styles.formRow}>
+            <View style={[styles.formField, { flex: 1, marginRight: 8 }]}>
+              <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>State</Text>
+              <TextInput
+                style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+                value={newMemberData.state}
+                onChangeText={(text) => setNewMemberData({...newMemberData, state: text})}
+                placeholder="State"
+                placeholderTextColor="#9ca3af"
+              />
+            </View>
+            <View style={[styles.formField, { flex: 1 }]}>
+              <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>PIN Code</Text>
+              <TextInput
+                style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+                value={newMemberData.pinCode}
+                onChangeText={(text) => setNewMemberData({...newMemberData, pinCode: text})}
+                placeholder="PIN Code"
+                placeholderTextColor="#9ca3af"
+                keyboardType="numeric"
+                maxLength={6}
+              />
+            </View>
+          </View>
+        </View>
+
+        {/* Level Selection */}
+        <View style={styles.formSection}>
+          <Text style={[styles.formSectionTitle, { fontSize: isSmallDevice ? 13 : 14 }]}>
+            Level Assignment
+          </Text>
+
+          <View style={styles.formField}>
+            <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>Select Level *</Text>
+            <View style={styles.levelOptionsGrid}>
+              {dynamicLevels.length > 0 ? (
+                dynamicLevels.map((level) => {
+                  const isSelected = newMemberData.level === level.id;
+                  const levelColor = getLevelColor(level.id);
+                  return (
+                    <TouchableOpacity
+                      key={level.id}
+                      style={[
+                        styles.levelOption,
+                        isSelected && styles.levelOptionActive,
+                        { borderColor: isSelected ? levelColor : '#e5e7eb' }
+                      ]}
+                      onPress={() => {
+                        setNewMemberData({...newMemberData, level: level.id});
+                        fetchAvailableParents(level.id);
+                        setParentMemberId(null);
+                        setParentMemberName('');
+                      }}
+                    >
+                      <MaterialIcons 
+                        name={getLevelIcon(level.id)} 
+                        size={isSmallDevice ? 10 : 14} 
+                        color={isSelected ? '#ffffff' : levelColor} 
+                      />
+                      <Text style={[
+                        styles.levelOptionText,
+                        isSelected && styles.levelOptionTextActive,
+                        { fontSize: isSmallDevice ? 9 : 10 }
+                      ]}>
+                        {level.id}
+                      </Text>
+                      <Text style={[
+                        styles.levelOptionSubText,
+                        isSelected && { color: '#ffffff' },
+                        { fontSize: isSmallDevice ? 7 : 8 }
+                      ]}>
+                        {level.directCommission}%/{level.secondaryCommission}%
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })
+              ) : (
+                <Text style={[styles.emptyText, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                  Loading levels...
+                </Text>
+              )}
+            </View>
+          </View>
+          
+          {availableParents.length > 0 && (
+            <View style={styles.formField}>
+              <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>
+                Attach to Parent (Optional)
+              </Text>
+              <Text style={[styles.helperText, { fontSize: isSmallDevice ? 9 : 10 }]}>
+                Select a higher-level member to attach this member under them
+              </Text>
+              
+              <View style={styles.parentSearchContainer}>
+                <TextInput
+                  style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14, flex: 1 }]}
+                  placeholder="Search parent by name..."
+                  placeholderTextColor="#9ca3af"
+                  value={searchParent}
+                  onChangeText={setSearchParent}
+                />
+                <TouchableOpacity
+                  style={styles.parentSearchButton}
+                  onPress={() => {
+                    if (searchParent.trim()) {
+                      const filtered = availableParents.filter(p => 
+                        p.fullName.toLowerCase().includes(searchParent.toLowerCase())
+                      );
+                      setAvailableParents(filtered);
+                    } else {
+                      fetchAvailableParents(newMemberData.level);
+                    }
+                  }}
+                >
+                  <MaterialIcons name="search" size={20} color="#ffffff" />
+                </TouchableOpacity>
+              </View>
+              
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false}
+                style={styles.parentListContainer}
+                contentContainerStyle={styles.parentListContent}
+              >
+                <TouchableOpacity
+                  style={[
+                    styles.parentChip,
+                    !parentMemberId && styles.parentChipActive
+                  ]}
+                  onPress={() => {
+                    setParentMemberId(null);
+                    setParentMemberName('');
+                  }}
+                >
+                  <Text style={[styles.parentChipText, !parentMemberId && styles.parentChipTextActive]}>
+                    None
+                  </Text>
+                </TouchableOpacity>
+                
+                {availableParents.map((parent) => (
+                  <TouchableOpacity
+                    key={parent.id}
+                    style={[
+                      styles.parentChip,
+                      parentMemberId === parent.id && styles.parentChipActive
+                    ]}
+                    onPress={() => {
+                      setParentMemberId(parent.id);
+                      setParentMemberName(parent.fullName);
+                    }}
+                  >
+                    <Text style={[
+                      styles.parentChipText,
+                      parentMemberId === parent.id && styles.parentChipTextActive
+                    ]}>
+                      {parent.fullName} ({parent.levelName})
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              
+              {parentMemberId && parentMemberName && (
+                <View style={styles.selectedParentContainer}>
+                  <MaterialIcons name="link" size={16} color="#10b981" />
+                  <Text style={styles.selectedParentText}>
+                    Attached to: {parentMemberName}
+                  </Text>
+                  <TouchableOpacity onPress={() => {
+                    setParentMemberId(null);
+                    setParentMemberName('');
+                  }}>
+                    <MaterialIcons name="close" size={16} color="#ef4444" />
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+      </ScrollView>
+    </TouchableOpacity>
+  </TouchableOpacity>
+</Modal>
+
+        {/* ============ DETAIL MODAL WITH HIERARCHY ============ */}
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={detailModalVisible}
+          onRequestClose={() => setDetailModalVisible(false)}
+        >
+          <View style={styles.modalContainer}>
+            <ScrollView style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={[styles.modalTitle, { fontSize: isSmallDevice ? 16 : 18 }]}>
+                  {translations.workingMemberDetails}
+                </Text>
+                <TouchableOpacity onPress={() => setDetailModalVisible(false)}>
+                  <MaterialIcons name="close" size={24} color="#6B7280" />
+                </TouchableOpacity>
+              </View>
+
+              {selectedMember && (
+                <>
+                  {/* Profile Section */}
+                  <View style={styles.detailProfile}>
+                    {selectedMember.profilePhoto ? (
+                      <Image source={{ uri: selectedMember.profilePhoto }} style={styles.detailAvatar} />
+                    ) : (
+                      <View style={styles.detailAvatarPlaceholder}>
+                        <Text style={[styles.detailAvatarText, { fontSize: isSmallDevice ? 28 : 32 }]}>
+                          {selectedMember.fullName?.charAt(0) || '?'}
+                        </Text>
+                      </View>
+                    )}
+                    <Text style={[styles.detailName, { fontSize: isSmallDevice ? 18 : 20 }]}>
+                      {selectedMember.fullName}
+                    </Text>
+                    <Text style={[styles.detailEmail, { fontSize: isSmallDevice ? 12 : 14 }]}>
+                      {selectedMember.email || selectedMember.phone || 'No contact'}
+                    </Text>
+                    <View style={[styles.detailLevelBadge, { backgroundColor: getLevelColor(selectedMember.level) + '15' }]}>
+                      <MaterialIcons name={getLevelIcon(selectedMember.level)} size={14} color={getLevelColor(selectedMember.level)} />
+                      <Text style={[styles.detailLevelText, { color: getLevelColor(selectedMember.level), fontSize: isSmallDevice ? 12 : 14 }]}>
+                        {getLevelLabel(selectedMember.level).toUpperCase()}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Performance Section */}
+                  <View style={styles.detailSection}>
+                    <Text style={[styles.detailSectionTitle, { fontSize: isSmallDevice ? 13 : 14 }]}>{translations.performance}</Text>
+                    <View style={styles.detailStats}>
+                      <View style={styles.detailStat}>
+                        <Text style={[styles.detailStatValue, { fontSize: isSmallDevice ? 16 : 18 }]}>
+                          {selectedMember.directReferralCount || 0}
+                        </Text>
+                        <Text style={[styles.detailStatLabel, { fontSize: isSmallDevice ? 10 : 11 }]}>{translations.direct}</Text>
+                      </View>
+                      <View style={styles.detailStat}>
+                        <Text style={[styles.detailStatValue, { fontSize: isSmallDevice ? 16 : 18 }]}>
+                          ₹{selectedMember.totalEarned?.toLocaleString() || 0}
+                        </Text>
+                        <Text style={[styles.detailStatLabel, { fontSize: isSmallDevice ? 10 : 11 }]}>{translations.earned}</Text>
+                      </View>
+                      <View style={styles.detailStat}>
+                        <Text style={[styles.detailStatValue, { fontSize: isSmallDevice ? 16 : 18 }]}>
+                          ₹{selectedMember.pendingCommission?.toLocaleString() || 0}
+                        </Text>
+                        <Text style={[styles.detailStatLabel, { fontSize: isSmallDevice ? 10 : 11 }]}>{translations.pendingCommission}</Text>
+                      </View>
+                      <View style={styles.detailStat}>
+                        <Text style={[styles.detailStatValue, { fontSize: isSmallDevice ? 16 : 18, color: '#f59e0b' }]}>
+                          ₹{selectedMember.totalDonations?.toLocaleString() || 0}
+                        </Text>
+                        <Text style={[styles.detailStatLabel, { fontSize: isSmallDevice ? 10 : 11 }]}>{translations.donations}</Text>
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* Commission Rates Section */}
+                  <View style={styles.detailSection}>
+                    <Text style={[styles.detailSectionTitle, { fontSize: isSmallDevice ? 13 : 14 }]}>{translations.commissionRates}</Text>
+                    <View style={styles.detailCommissionRow}>
+                      <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>{translations.directCommission}</Text>
+                      <Text style={[styles.detailValue, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                        {selectedMember.directCommission || 0}%
+                      </Text>
+                    </View>
+                    <View style={styles.detailCommissionRow}>
+                      <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>{translations.secondaryCommission}</Text>
+                      <Text style={[styles.detailValue, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                        {selectedMember.secondaryCommission || 0}%
+                      </Text>
+                    </View>
+                  </View>
+{/* Direct Members Section */}
+<View style={styles.detailSection}>
+  <View style={styles.hierarchyHeader}>
+    <Text style={[styles.detailSectionTitle, { fontSize: isSmallDevice ? 13 : 14 }]}>
+      {translations.directMembers}
+    </Text>
+    {(() => {
+      // Get the current member's registered members
+      const currentMember = workingMembers.find(m => m.id === selectedMember?.id);
+      const allMembers = currentMember?.registeredMembersList || [];
+      const filtered = allMembers.filter(m => 
+        m.role !== 'working' && m.role !== 'workingMember'
+      );
+      return filtered.length > 0 && (
+        <Text style={styles.hierarchyCount}>
+          ({filtered.length})
+        </Text>
+      );
+    })()}
+  </View>
+  
+  {(() => {
+    // Get the current member's registered members
+    const currentMember = workingMembers.find(m => m.id === selectedMember?.id);
+    const allMembers = currentMember?.registeredMembersList || [];
+    // Filter out working members
+    const filteredMembers = allMembers.filter(m => 
+      m.role !== 'working' && m.role !== 'workingMember'
+    );
+    
+    if (filteredMembers.length === 0) {
+      return (
+        <View style={styles.hierarchyEmptyState}>
+          <MaterialIcons name="people-outline" size={30} color="#d1d5db" />
+          <Text style={[styles.detailEmptyText, { fontSize: isSmallDevice ? 12 : 13 }]}>
+            No direct members yet
+          </Text>
+          <Text style={[styles.hierarchyEmptySubtext, { fontSize: isSmallDevice ? 10 : 11 }]}>
+            Members registered by this working member will appear here
+          </Text>
+        </View>
+      );
+    }
+    
+    return filteredMembers.map((member, index) => (
+      <TouchableOpacity 
+        key={index} 
+        style={styles.directMemberRow}
+        onPress={() => {
+          Alert.alert(
+            'Member Details',
+            `👤 Name: ${member.fullName || 'Unknown'}\n` +
+            `📧 Email: ${member.email || 'N/A'}\n` +
+            `📱 Phone: ${member.phone || 'N/A'}\n` +
+            `📊 Status: ${member.status || 'N/A'}\n` +
+            `🏅 Level: ${member.level || 'N/A'}`
+          );
+        }}
+        activeOpacity={0.7}
+      >
+        <View style={styles.directMemberAvatar}>
+          <Text style={styles.directMemberAvatarText}>
+            {member.fullName?.charAt(0)?.toUpperCase() || '?'}
+          </Text>
+        </View>
+        <View style={styles.directMemberInfo}>
+          <Text style={[styles.directMemberName, { fontSize: isSmallDevice ? 13 : 14 }]}>
+            {member.fullName || 'Unknown Member'}
+          </Text>
+          <Text style={[styles.directMemberDetails, { fontSize: isSmallDevice ? 10 : 11 }]}>
+            {member.email || member.phone || 'No contact'}
+          </Text>
+          <View style={styles.directMemberMeta}>
+            <View style={[
+              styles.directMemberStatus,
+              { backgroundColor: member.status === 'active' ? '#d1fae5' : '#fee2e2' }
+            ]}>
+              <Text style={[
+                styles.directMemberStatusText,
+                { color: member.status === 'active' ? '#10b981' : '#ef4444' }
+              ]}>
+                {member.status || 'unknown'}
+              </Text>
+            </View>
+            {member.level && (
+              <Text style={styles.directMemberLevel}>
+                Level {member.level}
+              </Text>
+            )}
+          </View>
+        </View>
+        <MaterialIcons name="chevron-right" size={20} color="#d1d5db" />
+      </TouchableOpacity>
+    ));
+  })()}
+</View>
+                  {/* Status Section */}
+                  <View style={styles.detailSection}>
+                    <Text style={[styles.detailSectionTitle, { fontSize: isSmallDevice ? 13 : 14 }]}>{translations.status}</Text>
+                    <View style={styles.detailStatusRow}>
+                      <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>{translations.status}:</Text>
+                      <View style={[styles.detailStatusBadge, { backgroundColor: getStatusColor(selectedMember.status) + '15' }]}>
+                        <Text style={[styles.detailStatusText, { color: getStatusColor(selectedMember.status), fontSize: isSmallDevice ? 10 : 11 }]}>
+                          {getStatusLabel(selectedMember.status)}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.detailStatusRow}>
+                      <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>{translations.level}:</Text>
+                      <Text style={[styles.detailValue, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                        {getLevelLabel(selectedMember.level)}
+                      </Text>
+                    </View>
+                    <View style={styles.detailStatusRow}>
+                      <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>{translations.nextLevel}:</Text>
+                      <Text style={[styles.detailValue, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                        {selectedMember.nextLevel ? getLevelLabel(selectedMember.nextLevel) : translations.max}
+                      </Text>
+                    </View>
+                    <View style={styles.detailStatusRow}>
+                      <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>{translations.donationsReq}:</Text>
+                      <Text style={[styles.detailValue, { fontSize: isSmallDevice ? 12 : 13, color: '#f59e0b' }]}>
+                        ₹{selectedMember.donationsRequired?.toLocaleString() || 0}
+                      </Text>
+                    </View>
+                    <View style={styles.detailStatusRow}>
+                      <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>{translations.wallet}:</Text>
+                      <Text style={[styles.detailValue, { fontSize: isSmallDevice ? 12 : 13, color: '#10b981' }]}>
+                        ₹{selectedMember.walletBalance?.toLocaleString() || 0}
+                      </Text>
+                    </View>
+                    {selectedMember.promotionEligible && (
+                      <View style={styles.detailStatusRow}>
+                        <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>{translations.promotion}:</Text>
+                        <Text style={[styles.detailValue, { fontSize: isSmallDevice ? 12 : 13, color: '#10b981' }]}>
+                          {translations.eligible}
+                        </Text>
+                      </View>
+                    )}
+                    {!selectedMember.promotionEligible && selectedMember.donationsRequired > 0 && (
+                      <View style={styles.detailStatusRow}>
+                        <Text style={[styles.detailLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>{translations.promotion}:</Text>
+                        <Text style={[styles.detailValue, { fontSize: isSmallDevice ? 12 : 13, color: '#f59e0b' }]}>
+                          ₹{selectedMember.membersNeededForPromotion?.toLocaleString() || 0} {translations.moreNeeded}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+
+{/* ============ UPLINE ============ */}
+{treeData.upline.length > 0 && (
+  <View style={styles.detailSection}>
+    <View style={styles.hierarchyHeader}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <MaterialIcons name="arrow-upward" size={16} color="#f59e0b" />
+        <Text style={[styles.detailSectionTitle, { fontSize: isSmallDevice ? 13 : 14, marginBottom: 0 }]}>
+          Upline ({treeData.upline.length})
+        </Text>
+      </View>
+    </View>
+    {treeData.upline.map((u, i) => (
+      <TouchableOpacity
+        key={u.id}
+        style={styles.uplineRow}
+        onPress={() => openNodeDetail(u)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.uplineIndexBadge}>
+          <Text style={styles.uplineIndexText}>{i + 1}</Text>
+        </View>
+        <View style={styles.uplineAvatar}>
+          <Text style={styles.uplineAvatarText}>
+            {u.fullName?.charAt(0)?.toUpperCase() || '?'}
+          </Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.uplineName} numberOfLines={1}>{u.fullName || 'Unknown'}</Text>
+          <Text style={styles.uplineMeta} numberOfLines={1}>
+            {getLevelLabel(u.level)} · {u.phone || u.email || '—'}
+          </Text>
+        </View>
+        <MaterialIcons name="chevron-right" size={18} color="#d1d5db" />
+      </TouchableOpacity>
+    ))}
+  </View>
+)}
+
+{/* ============ DOWNLINE TREE ============ */}
+<View style={styles.detailSection}>
+  <View style={styles.hierarchyHeader}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+      <MaterialIcons name="arrow-downward" size={16} color="#FF7722" />
+      <Text style={[styles.detailSectionTitle, { fontSize: isSmallDevice ? 13 : 14, marginBottom: 0 }]}>
+        Downline Tree
+      </Text>
+    </View>
+    {treeData.downline.length > 0 && (
+      <Text style={styles.hierarchyCount}>({treeData.downline.length} direct)</Text>
+    )}
+  </View>
+
+  {treeLoading ? (
+    <View style={styles.hierarchyLoading}>
+      <ActivityIndicator size="small" color="#FF7722" />
+      <Text style={styles.hierarchyLoadingText}>Loading tree...</Text>
+    </View>
+  ) : !treeData.self ? (
+    <View style={styles.hierarchyEmptyState}>
+      <Text style={styles.detailEmptyText}>No data</Text>
+    </View>
+  ) : (
+    <View>{renderTreeNode(treeData.self, 0, true)}</View>
+  )}
+</View>
+                  {/* Close Button */}
+                  <TouchableOpacity 
+                    style={styles.closeButton}
+                    onPress={() => setDetailModalVisible(false)}
+                  >
+                    <Text style={[styles.closeButtonText, { fontSize: isSmallDevice ? 13 : 14 }]}>{translations.close}</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </ScrollView>
+          </View>
+        </Modal>
+
+        {/* Promotion Modal */}
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={promotionModalVisible}
+          onRequestClose={() => setPromotionModalVisible(false)}
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={[styles.modalTitle, { fontSize: isSmallDevice ? 16 : 18 }]}>{translations.promoteWorkingMember}</Text>
+                <TouchableOpacity onPress={() => setPromotionModalVisible(false)}>
+                  <MaterialIcons name="close" size={24} color="#6B7280" />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.promotionInfo}>
+                <Text style={[styles.promotionLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>{translations.member}</Text>
+                <Text style={[styles.promotionValue, { fontSize: isSmallDevice ? 14 : 16 }]}>
+                  {promotionData.memberName}
+                </Text>
+              </View>
+
+              <View style={styles.promotionInfo}>
+                <Text style={[styles.promotionLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>{translations.currentLevel}</Text>
+                <Text style={[styles.promotionValue, { fontSize: isSmallDevice ? 14 : 16 }]}>
+                  {getLevelLabel(promotionData.currentLevel)}
+                </Text>
+              </View>
+
+              <View style={styles.formField}>
+                <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>{translations.newLevel}</Text>
+                <View style={styles.levelOptions}>
+                  {['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'].map((level) => {
+                    const levelDetails = getLevelDetails(level);
+                    const isActive = promotionData.newLevel === level;
+                    return (
+                      <TouchableOpacity
+                        key={level}
+                        style={[styles.levelOption, isActive && styles.levelOptionActive]}
+                        onPress={() => setPromotionData({...promotionData, newLevel: level})}
+                      >
+                        <MaterialIcons 
+                          name={getLevelIcon(level)} 
+                          size={isSmallDevice ? 12 : 16} 
+                          color={isActive ? '#ffffff' : getLevelColor(level)} 
+                        />
+                        <Text style={[
+                          styles.levelOptionText, 
+                          isActive && styles.levelOptionTextActive,
+                          { fontSize: isSmallDevice ? 10 : 12 }
+                        ]}>
+                          {levelDetails.title}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              <TouchableOpacity style={styles.promoteConfirmButton} onPress={handlePromotion}>
+                <MaterialIcons name="stars" size={20} color="#ffffff" />
+                <Text style={[styles.promoteConfirmText, { fontSize: isSmallDevice ? 14 : 16 }]}>
+                  {translations.confirmPromotion}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Commission Modal */}
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={commissionModalVisible}
+          onRequestClose={() => setCommissionModalVisible(false)}
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={[styles.modalTitle, { fontSize: isSmallDevice ? 16 : 18 }]}>{translations.addCommission}</Text>
+                <TouchableOpacity onPress={() => setCommissionModalVisible(false)}>
+                  <MaterialIcons name="close" size={24} color="#6B7280" />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.commissionInfo}>
+                <Text style={[styles.commissionLabel, { fontSize: isSmallDevice ? 11 : 12 }]}>{translations.member}</Text>
+                <Text style={[styles.commissionValue, { fontSize: isSmallDevice ? 14 : 16 }]}>
+                  {commissionData.memberName}
+                </Text>
+              </View>
+
+              <View style={styles.formField}>
+                <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>{translations.amount} *</Text>
+                <TextInput
+                  style={[styles.formInput, { fontSize: isSmallDevice ? 13 : 14 }]}
+                  value={commissionData.amount}
+                  onChangeText={(text) => setCommissionData({...commissionData, amount: text})}
+                  placeholder={translations.amount}
+                  keyboardType="numeric"
+                />
+              </View>
+
+              <View style={styles.formField}>
+                <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>{translations.type}</Text>
+                <View style={styles.typeToggle}>
+                  <TouchableOpacity
+                    style={[styles.typeButton, commissionData.type === 'direct' && styles.typeButtonActive]}
+                    onPress={() => setCommissionData({...commissionData, type: 'direct'})}
+                  >
+                    <Text style={[styles.typeButtonText, commissionData.type === 'direct' && styles.typeButtonTextActive, { fontSize: isSmallDevice ? 10 : 12 }]}>
+                      {translations.direct}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.typeButton, commissionData.type === 'secondary' && styles.typeButtonActive]}
+                    onPress={() => setCommissionData({...commissionData, type: 'secondary'})}
+                  >
+                    <Text style={[styles.typeButtonText, commissionData.type === 'secondary' && styles.typeButtonTextActive, { fontSize: isSmallDevice ? 10 : 12 }]}>
+                      {translations.secondary}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <View style={styles.formField}>
+                <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>{translations.description}</Text>
+                <TextInput
+                  style={[styles.formInput, styles.formTextArea, { fontSize: isSmallDevice ? 13 : 14 }]}
+                  value={commissionData.description}
+                  onChangeText={(text) => setCommissionData({...commissionData, description: text})}
+                  placeholder={translations.description}
+                  multiline
+                  numberOfLines={2}
+                />
+              </View>
+
+              <View style={styles.formField}>
+                <Text style={[styles.formLabel, { fontSize: isSmallDevice ? 12 : 13 }]}>{translations.status}</Text>
+                <View style={styles.statusToggle}>
+                  <TouchableOpacity
+                    style={[styles.statusButton, commissionData.status === 'pending' && styles.statusButtonActive]}
+                    onPress={() => setCommissionData({...commissionData, status: 'pending'})}
+                  >
+                    <Text style={[styles.statusButtonText, commissionData.status === 'pending' && styles.statusButtonTextActive, { fontSize: isSmallDevice ? 10 : 12 }]}>
+                      {translations.pending}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.statusButton, commissionData.status === 'paid' && styles.statusButtonActive]}
+                    onPress={() => setCommissionData({...commissionData, status: 'paid'})}
+                  >
+                    <Text style={[styles.statusButtonText, commissionData.status === 'paid' && styles.statusButtonTextActive, { fontSize: isSmallDevice ? 10 : 12 }]}>
+                      {translations.paid}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              <TouchableOpacity style={styles.submitButton} onPress={handleAddCommission}>
+                <MaterialIcons name="add" size={20} color="#ffffff" />
+                <Text style={[styles.submitButtonText, { fontSize: isSmallDevice ? 14 : 16 }]}>{translations.addCommission}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Commission History Modal */}
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={commissionHistoryModalVisible}
+          onRequestClose={() => setCommissionHistoryModalVisible(false)}
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={[styles.modalTitle, { fontSize: isSmallDevice ? 16 : 18 }]}>{translations.commissionHistory}</Text>
+                <TouchableOpacity onPress={() => setCommissionHistoryModalVisible(false)}>
+                  <MaterialIcons name="close" size={24} color="#6B7280" />
+                </TouchableOpacity>
+              </View>
+
+              <Text style={[styles.historyMemberName, { fontSize: isSmallDevice ? 14 : 16 }]}>
+                {selectedMember?.fullName}
+              </Text>
+
+              {commissionHistory.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <MaterialIcons name="attach-money" size={44} color="#D1D5DB" />
+                  <Text style={[styles.emptyText, { fontSize: isSmallDevice ? 12 : 13 }]}>
+                    {translations.noCommissionHistory}
+                  </Text>
+                </View>
+              ) : (
+                commissionHistory.map((item, index) => {
+                  const isDirect = item.type === 'direct_commission';
+                  const statusLabel = item.status === 'paid' || item.status === 'completed' ? translations.paid : 
+                                      item.status === 'pending' ? translations.pending : translations.failed;
+                  return (
+                    <View key={index} style={styles.historyItem}>
+                      <View style={styles.historyHeader}>
+                        <View>
+                          <Text style={[styles.historyAmount, { fontSize: isSmallDevice ? 14 : 16 }]}>
+                            ₹{item.amount?.toLocaleString() || 0}
+                          </Text>
+                          <Text style={[styles.historyType, { fontSize: isSmallDevice ? 10 : 11 }]}>
+                            {isDirect ? translations.direct : translations.secondary}
+                          </Text>
+                        </View>
+                        <View style={[styles.historyStatus, { 
+                          backgroundColor: item.status === 'paid' || item.status === 'completed' ? '#10b981' : 
+                                         item.status === 'pending' ? '#f59e0b' : '#ef4444' 
+                        }]}>
+                          <Text style={[styles.historyStatusText, { fontSize: isSmallDevice ? 8 : 10 }]}>
+                            {statusLabel}
+                          </Text>
+                        </View>
+                      </View>
+                      {item.description && (
+                        <Text style={[styles.historyDescription, { fontSize: isSmallDevice ? 11 : 13 }]}>
+                          {item.description}
+                        </Text>
+                      )}
+                      <Text style={[styles.historyDate, { fontSize: isSmallDevice ? 10 : 12 }]}>
+                        {item.createdAt ? new Date(item.createdAt).toLocaleString() : translations.nA}
+                      </Text>
+                    </View>
+                  );
+                })
+              )}
+
+              <TouchableOpacity 
+                style={styles.closeButton}
+                onPress={() => setCommissionHistoryModalVisible(false)}
+              >
+                <Text style={[styles.closeButtonText, { fontSize: isSmallDevice ? 13 : 14 }]}>{translations.close}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Wallet Modal */}
+        <WalletModal />
+
+        {/* Download ID Card & Certificates Modal */}
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={downloadModalVisible}
+          onRequestClose={() => {
+            setDownloadModalVisible(false);
+            setSelectedMemberForDownload(null);
+          }}
+        >
+          <View style={styles.modalContainer}>
+            <ScrollView style={[styles.modalContent, { maxHeight: '90%' }]}>
+              <View style={styles.modalHeader}>
+                <Text style={[styles.modalTitle, { fontSize: isSmallDevice ? 16 : 18 }]}>
+                  Download Documents
+                </Text>
+                <TouchableOpacity onPress={() => {
+                  setDownloadModalVisible(false);
+                  setSelectedMemberForDownload(null);
+                }}>
+                  <MaterialIcons name="close" size={24} color="#6B7280" />
+                </TouchableOpacity>
+              </View>
+
+              {selectedMemberForDownload && (
+                <>
+                  <View style={styles.downloadMemberInfo}>
+                    <Text style={styles.downloadMemberName}>{selectedMemberForDownload.fullName}</Text>
+                    <Text style={styles.downloadMemberLevel}>
+                      Level: {getLevelLabel(selectedMemberForDownload.level)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.downloadSection}>
+                    <View style={styles.downloadSectionHeader}>
+                      <Text style={styles.downloadSectionTitle}>ID Card</Text>
+                      <TouchableOpacity 
+                        style={styles.downloadButtonSmall}
+                        onPress={() => downloadIDCard(selectedMemberForDownload)}
+                        disabled={downloading}
+                        activeOpacity={0.7}
+                      >
+                        <MaterialIcons 
+                          name={downloading ? "hourglass-empty" : "download"} 
+                          size={16} 
+                          color="#8b5cf6" 
+                        />
+                        <Text style={styles.downloadButtonSmallText}>
+                          {downloading ? 'Downloading...' : 'Download ID Card'}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                    {renderIDCard(selectedMemberForDownload)}
+                  </View>
+
+                  <View style={styles.downloadSection}>
+                    <View style={styles.downloadSectionHeader}>
+                      <Text style={styles.downloadSectionTitle}>Certificates</Text>
+                      <Text style={styles.downloadSectionCount}>
+                        {memberCertificates.length} earned
+                      </Text>
+                    </View>
+
+                    {memberCertificates.length > 0 ? (
+                      memberCertificates.map((cert, index) => renderCertificateItem(cert, index))
+                    ) : (
+                      <View style={styles.noCertContainer}>
+                        <MaterialIcons name="verified" size={30} color="#d1d5db" />
+                        <Text style={styles.noCertText}>No certificates earned yet</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  <TouchableOpacity 
+                    style={styles.closeButton}
+                    onPress={() => {
+                      setDownloadModalVisible(false);
+                      setSelectedMemberForDownload(null);
+                    }}
+                  >
+                    <Text style={[styles.closeButtonText, { fontSize: isSmallDevice ? 13 : 14 }]}>Close</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </ScrollView>
+          </View>
+        </Modal>
+<NodeMembersModal />
+        <NodeDetailModal />
+        <EditMemberModal />
+      </View>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#fdf8f3',
+  },
+  container: {
+    flex: 1,
+    backgroundColor: '#fdf8f3',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fdf8f3',
+  },
+  loadingText: {
+    fontFamily: Fonts.Regular,
+    color: '#6b7280',
+    marginTop: 10,
+  },
+  headerCard: {
+    backgroundColor: '#FF7722',
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 20 : 50,
+    paddingBottom: 16,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+  },
+  headerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  backButton: {
+    padding: 4,
+  },
+  headerTitle: {
+    fontFamily: Fonts.Bold,
+    color: '#ffffff',
+    flex: 1,
+    textAlign: 'center',
+  },
+  refreshButton: {
+    padding: 4,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+    marginBottom: 12,
+  },
+  searchInput: {
+    flex: 1,
+    fontFamily: Fonts.Regular,
+    color: '#1f2937',
+  },
+  statusChip: {
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  activeStatusChip: {
+    backgroundColor: '#ffffff',
+    borderColor: '#ffffff',
+  },
+  statusChipText: {
+    fontFamily: Fonts.SemiBold,
+    color: 'rgba(255,255,255,0.8)',
+  },
+  activeStatusChipText: {
+    color: '#FF7722',
+  },
+  statsWrapper: {
+    marginBottom: 4,
+  },
+  statsScrollContent: {
+    gap: 10,
+    alignItems: 'center',
+  },
+  statCard: {
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: 12,
+    padding: 6,
+    minWidth: 70,
+    width: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 55,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  statCardActive: {
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    borderColor: '#ffffff',
+  },
+  statIconCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
+  statType: {
+    fontFamily: Fonts.Bold,
+    color: 'rgba(255,255,255,0.8)',
+    textAlign: 'center',
+    fontSize: 10
+  },
+  statCount: {
+    fontFamily: Fonts.Bold,
+    color: '#ffffff',
+    textAlign: 'center',
+  },
+  flatList: {
+    flex: 1,
+  },
+  listContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 20,
+  },
+  memberCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  memberInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  memberTextInfo: {
+    flex: 1,
+    marginLeft: 10,
+  },
+  avatarContainer: {
+    marginRight: 10,
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+  },
+  avatarPlaceholder: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFF5EB',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarText: {
+    fontFamily: Fonts.Bold,
+    color: '#FF7722',
+  },
+  memberName: {
+    fontFamily: Fonts.SemiBold,
+    color: '#1f2937',
+  },
+  memberEmail: {
+    fontFamily: Fonts.Regular,
+    color: '#6b7280',
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+    gap: 4,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  statusText: {
+    fontFamily: Fonts.SemiBold,
+  },
+  cardStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#f3f4f6',
+  },
+  statItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  statValue: {
+    fontFamily: Fonts.Bold,
+    color: '#1f2937',
+  },
+  statLabel: {
+    fontFamily: Fonts.Regular,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+  cardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#f3f4f6',
+    flexWrap: 'wrap',
+  },
+  levelBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 12,
+    gap: 4,
+  },
+  levelBadgeText: {
+    fontFamily: Fonts.SemiBold,
+  },
+  commissionInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  commissionRateText: {
+    fontFamily: Fonts.Regular,
+    color: '#6b7280',
+  },
+  promotionBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#d1fae5',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    gap: 4,
+  },
+  promotionText: {
+    fontFamily: Fonts.SemiBold,
+    color: '#10b981',
+  },
+  nextLevelBadge: {
+    backgroundColor: '#ede9fe',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  nextLevelText: {
+    fontFamily: Fonts.Regular,
+    color: '#8b5cf6',
+  },
+  cardActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 10,
+    gap: 4,
+    flexWrap: 'wrap',
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    gap: 4,
+  },
+  promoteButton: {
+    backgroundColor: '#f59e0b',
+  },
+  commissionButton: {
+    backgroundColor: '#8b5cf6',
+  },
+  historyButton: {
+    backgroundColor: '#06b6d4',
+  },
+  walletButton: {
+    backgroundColor: '#10b981',
+  },
+  approveButton: {
+    backgroundColor: '#10b981',
+  },
+  suspendButton: {
+    backgroundColor: '#ef4444',
+  },
+  viewButton: {
+    backgroundColor: '#FF7722',
+  },
+  editButton: {
+    backgroundColor: '#3b82f6',
+  },
+  actionButtonText: {
+    fontFamily: Fonts.SemiBold,
+    color: '#ffffff',
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 60,
+    gap: 12,
+    flex: 1,
+  },
+  emptyStateText: {
+    fontFamily: Fonts.SemiBold,
+    color: '#1f2937',
+  },
+  emptyStateSubtext: {
+    fontFamily: Fonts.Regular,
+    color: '#6b7280',
+  },
+  modalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+    padding: 16,
+  },
+  modalContent: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 20,
+    paddingBottom: 60,
+    maxHeight: '90%',
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginTop: 16,
+    paddingBottom: Platform.OS === 'ios' ? 20 : 10,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontFamily: Fonts.Bold,
+    color: '#1f2937',
+  },
+  detailProfile: {
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  detailAvatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
+  detailAvatarPlaceholder: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#FFF5EB',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  detailAvatarText: {
+    fontFamily: Fonts.Bold,
+    color: '#FF7722',
+  },
+  detailName: {
+    fontFamily: Fonts.Bold,
+    color: '#1f2937',
+    marginTop: 8,
+  },
+  detailEmail: {
+    fontFamily: Fonts.Regular,
+    color: '#6b7280',
+  },
+  detailLevelBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 6,
+  },
+  detailLevelText: {
+    fontFamily: Fonts.SemiBold,
+  },
+  detailSection: {
+    marginBottom: 16,
+  },
+  detailSectionTitle: {
+    fontFamily: Fonts.SemiBold,
+    color: '#1f2937',
+    marginBottom: 8,
+  },
+  detailStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  detailStat: {
+    alignItems: 'center',
+  },
+  detailStatValue: {
+    fontFamily: Fonts.Bold,
+    color: '#1f2937',
+  },
+  detailStatLabel: {
+    fontFamily: Fonts.Regular,
+    color: '#6b7280',
+  },
+  detailCommissionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+  },
+  registeredMemberItem: {
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  registeredMemberName: {
+    fontFamily: Fonts.SemiBold,
+    color: '#1f2937',
+  },
+  detailEmptyText: {
+    fontFamily: Fonts.Regular,
+    color: '#6b7280',
+    textAlign: 'center',
+    paddingVertical: 10,
+  },
+  detailStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 4,
+  },
+  detailLabel: {
+    fontFamily: Fonts.Regular,
+    color: '#6b7280',
+    width: 100,
+  },
+  detailValue: {
+    fontFamily: Fonts.Regular,
+    color: '#1f2937',
+    flex: 1,
+    textAlign: 'right',
+  },
+  detailStatusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  detailStatusText: {
+    fontFamily: Fonts.SemiBold,
+  },
+  closeButton: {
+    backgroundColor: '#6b7280',
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  closeButtonText: {
+    fontFamily: Fonts.SemiBold,
+    color: '#ffffff',
+  },
+  promotionInfo: {
+    marginBottom: 12,
+  },
+  promotionLabel: {
+    fontFamily: Fonts.Regular,
+    color: '#6b7280',
+  },
+  promotionValue: {
+    fontFamily: Fonts.SemiBold,
+    color: '#1f2937',
+  },
+  formField: {
+    marginBottom: 12,
+  },
+  formLabel: {
+    fontFamily: Fonts.SemiBold,
+    color: '#1f2937',
+    marginBottom: 4,
+  },
+  formInput: {
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 8,
+    padding: 10,
+    backgroundColor: '#f9fafb',
+    fontFamily: Fonts.Regular,
+  },
+  formTextArea: {
+    height: 60,
+    textAlignVertical: 'top',
+  },
+  levelOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  levelOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    gap: 4,
+  },
+  levelOptionActive: {
+    backgroundColor: '#FF7722',
+    borderColor: '#FF7722',
+  },
+  levelOptionText: {
+    fontFamily: Fonts.SemiBold,
+    color: '#6b7280',
+  },
+  levelOptionTextActive: {
+    color: '#ffffff',
+  },
+  typeToggle: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  typeButton: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    alignItems: 'center',
+  },
+  typeButtonActive: {
+    backgroundColor: '#8b5cf6',
+    borderColor: '#8b5cf6',
+  },
+  typeButtonText: {
+    fontFamily: Fonts.SemiBold,
+    color: '#6b7280',
+  },
+  typeButtonTextActive: {
+    color: '#ffffff',
+  },
+  statusToggle: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  referralButton: {
+    backgroundColor: '#f59e0b',
+  },
+  referralMemberInfo: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    marginBottom: 16,
+    backgroundColor: '#f9fafb',
+    borderRadius: 8,
+  },
+  referralMemberName: {
+    fontFamily: Fonts.Bold,
+    color: '#1f2937',
+  },
+  referralMemberLevel: {
+    fontFamily: Fonts.Regular,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+  referralCodeContainer: {
+    alignItems: 'center',
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+    backgroundColor: '#f0fdf4',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+    marginBottom: 16,
+  },
+  referralCodeLabel: {
+    fontFamily: Fonts.SemiBold,
+    color: '#6b7280',
+    marginBottom: 8,
+  },
+  referralCodeDisplay: {
+    backgroundColor: '#ffffff',
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#10b981',
+    marginBottom: 8,
+  },
+  referralCodeText: {
+    fontFamily: Fonts.Bold,
+    color: '#10b981',
+    letterSpacing: 4,
+  },
+  referralCodeNote: {
+    fontFamily: Fonts.Regular,
+    color: '#6b7280',
+    textAlign: 'center',
+    marginVertical: 8,
+  },
+  referralShareButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#10b981',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    gap: 8,
+    marginTop: 8,
+  },
+  referralShareText: {
+    fontFamily: Fonts.SemiBold,
+    color: '#ffffff',
+  },
+  referralNoCodeText: {
+    fontFamily: Fonts.SemiBold,
+    color: '#1f2937',
+    marginBottom: 4,
+  },
+  referralNoCodeSubtext: {
+    fontFamily: Fonts.Regular,
+    color: '#6b7280',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  referralGenerateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FF7722',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    gap: 8,
+    width: '100%',
+  },
+  referralGenerateText: {
+    fontFamily: Fonts.SemiBold,
+    color: '#ffffff',
+  },
+  addButton: {
+    padding: 4,
+  },
+  downloadButton: {
+    backgroundColor: '#8b5cf6',
+  },
+  idCard: {
+    width: '100%',
+    backgroundColor: '#ffffff',
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 2,
+    borderColor: '#e5e7eb',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  watermarkContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    opacity: 0.1,
+  },
+  idCardTopSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+    paddingHorizontal: 2,
+  },
+  idCardLeftLogo: {
+    width: 50,
+    height: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  idCardRightLogo: {
+    width: 50,
+    height: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  idCardLogoImage: {
+    width: 40,
+    height: 40,
+  },
+  idCardCenterTitle: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  idCardMainTitle: {
+    fontFamily: Fonts.Bold,
+    fontSize: 12,
+    color: '#1f2937',
+    textAlign: 'center',
+  },
+  idCardSubTitle: {
+    fontFamily: Fonts.Regular,
+    fontSize: 8,
+    color: '#4b5563',
+    textAlign: 'center',
+    marginTop: 1,
+  },
+  idCardRegNo: {
+    fontFamily: Fonts.Regular,
+    fontSize: 7,
+    color: '#6b7280',
+    textAlign: 'center',
+    marginTop: 1,
+  },
+  idCardIdentityTitle: {
+    alignItems: 'center',
+    marginVertical: 4,
+    paddingVertical: 2,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#d1d5db',
+  },
+  idCardIdentityText: {
+    fontFamily: Fonts.Bold,
+    fontSize: 14,
+    color: '#1f2937',
+    letterSpacing: 1,
+  },
+  idCardBody: {
+    flexDirection: 'row',
+    marginTop: 4,
+    paddingVertical: 2,
+  },
+  idCardLeftFields: {
+    flex: 1,
+    paddingRight: 6,
+  },
+  idCardField: {
+    marginBottom: 2,
+  },
+  idCardFieldLabel: {
+    fontFamily: Fonts.SemiBold,
+    fontSize: 8,
+    color: '#4b5563',
+  },
+  idCardFieldValue: {
+    fontFamily: Fonts.Regular,
+    fontSize: 9,
+    color: '#1f2937',
+    marginLeft: 2,
+  },
+  idCardStatusValue: {
+    color: '#10b981',
+    fontFamily: Fonts.SemiBold,
+  },
+  idCardRightPhoto: {
+    width: 70,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingLeft: 4,
+  },
+  idCardPhoto: {
+    width: 60,
+    height: 70,
+    borderRadius: 3,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+  },
+  statusFilterWrapper: {
+    marginBottom: 12,
+  },
+  statusFilterScrollContent: {
+    gap: 8,
+    paddingVertical: 4,
+    alignItems: 'center',
+  },
+  idCardPhotoPlaceholder: {
+    width: 60,
+    height: 70,
+    borderRadius: 3,
+    backgroundColor: '#f3f4f6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+  },
+  idCardPhotoLabel: {
+    fontFamily: Fonts.Regular,
+    fontSize: 7,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+  idCardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#e5e7eb',
+  },
+  idCardFooterText: {
+    fontFamily: Fonts.SemiBold,
+    fontSize: 9,
+    color: '#4b5563',
+  },
+  idCardFooterCenter: {
+    alignItems: 'center',
+  },
+  idCardSignatureLine: {
+    width: 60,
+    height: 1,
+    backgroundColor: '#9ca3af',
+    marginBottom: 1,
+  },
+  idCardSignatureLabel: {
+    fontFamily: Fonts.Regular,
+    fontSize: 7,
+    color: '#6b7280',
+  },
+  downloadMemberInfo: {
+    alignItems: 'center',
+    paddingVertical: 8,
+    marginBottom: 12,
+    backgroundColor: '#f9fafb',
+    borderRadius: 8,
+  },
+  downloadMemberName: {
+    fontFamily: Fonts.Bold,
+    fontSize: 16,
+    color: '#1f2937',
+  },
+  downloadMemberLevel: {
+    fontFamily: Fonts.Regular,
+    fontSize: 12,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+  downloadSection: {
+    marginBottom: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  downloadSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  downloadSectionTitle: {
+    fontFamily: Fonts.SemiBold,
+    fontSize: 14,
+    color: '#1f2937',
+  },
+  downloadSectionCount: {
+    fontFamily: Fonts.Regular,
+    fontSize: 11,
+    color: '#6b7280',
+  },
+  downloadButtonSmall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: '#f5f3ff',
+  },
+  downloadButtonSmallText: {
+    fontFamily: Fonts.SemiBold,
+    fontSize: 10,
+    color: '#8b5cf6',
+  },
+  certItemWrapper: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+    paddingVertical: 6,
+  },
+  certItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  parentSearchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  parentSearchButton: {
+    backgroundColor: '#FF7722',
+    padding: 10,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  parentListContainer: {
+    maxHeight: 80,
+    marginBottom: 8,
+  },
+  parentListContent: {
+    gap: 8,
+    alignItems: 'center',
+  },
+  parentChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    backgroundColor: '#ffffff',
+  },
+  parentChipActive: {
+    backgroundColor: '#FF7722',
+    borderColor: '#FF7722',
+  },
+  parentChipText: {
+    fontFamily: Fonts.Regular,
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  parentChipTextActive: {
+    color: '#ffffff',
+  },
+  selectedParentContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0fdf4',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+  },
+  selectedParentText: {
+    fontFamily: Fonts.SemiBold,
+    fontSize: 12,
+    color: '#10b981',
+    flex: 1,
+  },
+  methodCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: '#e5e7eb',
+  },
+  methodCardActive: {
+    borderColor: '#FF7722',
+    backgroundColor: '#fff5eb',
+  },
+  methodIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
+    flexShrink: 0,
+  },
+  methodContent: {
+    flex: 1,
+  },
+  methodTitle: {
+    fontFamily: Fonts.SemiBold,
+    fontSize: 16,
+    color: '#1f2937',
+  },
+  methodTitleActive: {
+    color: '#FF7722',
+  },
+  methodDescription: {
+    fontFamily: Fonts.Regular,
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  modalSubText: {
+    fontFamily: Fonts.Regular,
+    color: '#6b7280',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  helperText: {
+    fontFamily: Fonts.Regular,
+    color: '#6b7280',
+    marginBottom: 6,
+    marginTop: 2,
+  },
+  certItemIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexShrink: 0,
+  },
+  certItemContent: {
+    flex: 1,
+  },
+  certItemTitle: {
+    fontFamily: Fonts.SemiBold,
+    fontSize: 12,
+    color: '#1f2937',
+  },
+  certItemMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  certItemType: {
+    fontFamily: Fonts.Regular,
+    fontSize: 9,
+    color: '#6b7280',
+    backgroundColor: '#f3f4f6',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 3,
+  },
+  certItemDate: {
+    fontFamily: Fonts.Regular,
+    fontSize: 9,
+    color: '#9ca3af',
+  },
+  certItemAmount: {
+    fontFamily: Fonts.SemiBold,
+    fontSize: 12,
+    color: '#10b981',
+    flexShrink: 0,
+  },
+  certDownloadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    gap: 3,
+    alignSelf: 'flex-end',
+  },
+  certDownloadText: {
+    fontFamily: Fonts.Regular,
+    color: '#8b5cf6',
+    fontSize: 10,
+  },
+  noCertContainer: {
+    alignItems: 'center',
+    paddingVertical: 16,
+    gap: 4,
+  },
+  noCertText: {
+    fontFamily: Fonts.Regular,
+    fontSize: 13,
+    color: '#6b7280',
+  },
+  statusButton: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    alignItems: 'center',
+  },
+  statusButtonActive: {
+    backgroundColor: '#FF7722',
+    borderColor: '#FF7722',
+  },
+// Node Member Details Styles
+nodeMemberDetailsSection: {
+  backgroundColor: '#f8fafc',
+  borderRadius: 10,
+  padding: 12,
+  marginBottom: 12,
+},
+nodeMemberDetailRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 8,
+  paddingVertical: 4,
+},
+nodeMemberDetailText: {
+  fontFamily: Fonts.Regular,
+  color: '#1f2937',
+  flex: 1,
+},
+nodeMemberStatsRow: {
+  flexDirection: 'row',
+  justifyContent: 'space-around',
+  marginTop: 8,
+  paddingTop: 8,
+  borderTopWidth: 1,
+  borderTopColor: '#e5e7eb',
+},
+nodeMemberStat: {
+  alignItems: 'center',
+},
+nodeMemberStatValue: {
+  fontFamily: Fonts.Bold,
+  color: '#1f2937',
+},
+nodeMemberStatLabel: {
+  fontFamily: Fonts.Regular,
+  color: '#6b7280',
+  marginTop: 2,
+},
+nodeMembersDivider: {
+  height: 1,
+  backgroundColor: '#e5e7eb',
+  marginVertical: 8,
+},
+nodeMembersSectionTitle: {
+  fontFamily: Fonts.SemiBold,
+  color: '#1f2937',
+  marginBottom: 8,
+},
+  statusButtonText: {
+    fontFamily: Fonts.SemiBold,
+    color: '#6b7280',
+  },
+  statusButtonTextActive: {
+    color: '#ffffff',
+  },
+  submitButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#10b981',
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginTop: 12,
+    gap: 8,
+  },
+  submitButtonText: {
+    fontFamily: Fonts.SemiBold,
+    color: '#ffffff',
+  },
+  promoteConfirmButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f59e0b',
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginTop: 12,
+    gap: 8,
+  },
+  promoteConfirmText: {
+    fontFamily: Fonts.SemiBold,
+    color: '#ffffff',
+  },
+  historyMemberName: {
+    fontFamily: Fonts.SemiBold,
+    color: '#1f2937',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  historyItem: {
+    backgroundColor: '#f9fafb',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  historyHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  historyAmount: {
+    fontFamily: Fonts.Bold,
+    color: '#1f2937',
+  },
+  historyType: {
+    fontFamily: Fonts.Regular,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+  historyStatus: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  modalSaveButton: {
+    backgroundColor: '#FF7722',
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 60,
+  },
+  modalSaveButtonText: {
+    fontFamily: Fonts.SemiBold,
+    fontSize: 14,
+    color: '#ffffff',
+  },
+  historyStatusText: {
+    fontFamily: Fonts.SemiBold,
+    color: '#ffffff',
+  },
+  historyDescription: {
+    fontFamily: Fonts.Regular,
+    color: '#6b7280',
+    marginTop: 4,
+  },
+  historyDate: {
+    fontFamily: Fonts.Regular,
+    color: '#9ca3af',
+    marginTop: 2,
+  },
+  emptyText: {
+    fontFamily: Fonts.Regular,
+    color: '#6b7280',
+    textAlign: 'center',
+  },
+  walletSummary: {
+    padding: 16,
+  },
+  walletMemberName: {
+    fontFamily: Fonts.Bold,
+    color: '#1f2937',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  walletBalanceContainer: {
+    backgroundColor: '#f3f4f6',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  walletBalanceLabel: {
+    fontFamily: Fonts.Regular,
+    color: '#6b7280',
+  },
+  walletBalance: {
+    fontFamily: Fonts.Bold,
+    color: '#10b981',
+    marginTop: 4,
+  },
+  walletStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  walletStat: {
+    alignItems: 'center',
+  },
+  assignButton: {
+    backgroundColor: '#8b5cf6',
+  },
+  assignParentInfo: {
+    backgroundColor: '#f9fafb',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  assignLabel: {
+    fontFamily: Fonts.Regular,
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  assignParentName: {
+    fontFamily: Fonts.Bold,
+    fontSize: 16,
+    color: '#1f2937',
+    marginTop: 2,
+  },
+  assignParentLevel: {
+    fontFamily: Fonts.Regular,
+    fontSize: 12,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+  assignDivider: {
+    height: 1,
+    backgroundColor: '#e5e7eb',
+    marginVertical: 12,
+  },
+// Add these styles
+passwordContainer: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  borderWidth: 1,
+  borderColor: '#e5e7eb',
+  borderRadius: 8,
+  backgroundColor: '#f9fafb',
+},
+passwordInput: {
+  flex: 1,
+  padding: 10,
+  fontFamily: Fonts.Regular,
+  color: '#1f2937',
+},
+eyeButton: {
+  paddingHorizontal: 12,
+  paddingVertical: 8,
+  justifyContent: 'center',
+  alignItems: 'center',
+},
+  assignSubtitle: {
+    fontFamily: Fonts.Regular,
+    fontSize: 14,
+    color: '#6b7280',
+    marginBottom: 12,
+  },
+  assignSearchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  assignListContainer: {
+    maxHeight: 250,
+    marginBottom: 12,
+  },
+// ============ DIRECT MEMBERS STYLES ============
+directMemberRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: '#f9fafb',
+  padding: 12,
+  borderRadius: 10,
+  borderWidth: 1,
+  borderColor: '#f3f4f6',
+},
+directMemberAvatar: {
+  width: 40,
+  height: 40,
+  borderRadius: 20,
+  backgroundColor: '#8b5cf615',
+  justifyContent: 'center',
+  alignItems: 'center',
+  marginRight: 12,
+},
+directMemberAvatarText: {
+  fontFamily: Fonts.Bold,
+  fontSize: 16,
+  color: '#8b5cf6',
+},
+directMemberInfo: {
+  flex: 1,
+},
+directMemberName: {
+  fontFamily: Fonts.SemiBold,
+  color: '#1f2937',
+},
+directMemberDetails: {
+  fontFamily: Fonts.Regular,
+  color: '#6b7280',
+  marginTop: 1,
+},
+directMemberMeta: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 6,
+  marginTop: 2,
+},
+directMemberStatus: {
+  paddingHorizontal: 8,
+  paddingVertical: 2,
+  borderRadius: 8,
+},
+directMemberStatusText: {
+  fontFamily: Fonts.SemiBold,
+  fontSize: 10,
+},
+directMemberLevel: {
+  fontFamily: Fonts.Regular,
+  fontSize: 10,
+  color: '#6b7280',
+  backgroundColor: '#f3f4f6',
+  paddingHorizontal: 6,
+  paddingVertical: 1,
+  borderRadius: 4,
+},
+  assignItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    backgroundColor: '#f9fafb',
+    borderRadius: 8,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  assignItemActive: {
+    borderColor: '#8b5cf6',
+    backgroundColor: '#f5f3ff',
+  },
+  assignItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  assignItemAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#8b5cf615',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  assignItemAvatarText: {
+    fontFamily: Fonts.Bold,
+    fontSize: 14,
+    color: '#8b5cf6',
+  },
+  assignItemName: {
+    fontFamily: Fonts.SemiBold,
+    fontSize: 14,
+    color: '#1f2937',
+  },
+  assignItemLevel: {
+    fontFamily: Fonts.Regular,
+    fontSize: 11,
+    color: '#6b7280',
+  },
+  assignEmptyState: {
+    alignItems: 'center',
+    paddingVertical: 30,
+    gap: 4,
+  },
+  assignEmptyText: {
+    fontFamily: Fonts.SemiBold,
+    fontSize: 14,
+    color: '#1f2937',
+  },
+  assignEmptySubtext: {
+    fontFamily: Fonts.Regular,
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  assignSelectedContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0fdf4',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 6,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+  },
+  assignSelectedText: {
+    fontFamily: Fonts.SemiBold,
+    fontSize: 13,
+    color: '#10b981',
+    flex: 1,
+  },
+  assignActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginTop: 8,
+  },
+// Node Modal Styles
+nodeModalHeaderLeft: {
+  flex: 1,
+},
+nodeModalStatusRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 10,
+  marginTop: 4,
+},
+nodeModalStatusBadge: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  paddingHorizontal: 10,
+  paddingVertical: 3,
+  borderRadius: 12,
+  gap: 4,
+},
+nodeModalStatusDot: {
+  width: 6,
+  height: 6,
+  borderRadius: 3,
+},
+nodeModalStatusText: {
+  fontFamily: Fonts.SemiBold,
+  fontSize: 11,
+},
+nodeModalLevelText: {
+  fontFamily: Fonts.Regular,
+  color: '#6b7280',
+},
+nodeModalProfileSection: {
+  alignItems: 'center',
+  marginBottom: 16,
+  paddingBottom: 16,
+  borderBottomWidth: 1,
+  borderBottomColor: '#f3f4f6',
+},
+nodeModalProfileImageContainer: {
+  position: 'relative',
+  marginBottom: 8,
+},
+nodeModalProfileImage: {
+  width: 80,
+  height: 80,
+  borderRadius: 40,
+  borderWidth: 3,
+  borderColor: '#FF7722',
+},
+nodeModalProfilePlaceholder: {
+  width: 80,
+  height: 80,
+  borderRadius: 40,
+  backgroundColor: '#fff5eb',
+  justifyContent: 'center',
+  alignItems: 'center',
+  borderWidth: 3,
+  borderColor: '#FF7722',
+},
+nodeModalProfileName: {
+  fontFamily: Fonts.Bold,
+  color: '#1f2937',
+  textAlign: 'center',
+},
+nodeModalProfileBio: {
+  fontFamily: Fonts.Regular,
+  color: '#6b7280',
+  textAlign: 'center',
+},
+nodeModalCard: {
+  backgroundColor: '#f9fafb',
+  borderRadius: 10,
+  padding: 12,
+  marginBottom: 12,
+},
+nodeModalCardTitle: {
+  fontFamily: Fonts.SemiBold,
+  color: '#1f2937',
+  marginBottom: 8,
+  borderBottomWidth: 1,
+  borderBottomColor: '#e5e7eb',
+  paddingBottom: 6,
+},
+nodeModalField: {
+  marginBottom: 6,
+},
+nodeModalLabel: {
+  fontFamily: Fonts.SemiBold,
+  color: '#6b7280',
+  marginBottom: 1,
+},
+nodeModalValue: {
+  fontFamily: Fonts.Regular,
+  color: '#1f2937',
+},
+nodeModalStatusBadgeInline: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: '#d1fae5',
+  paddingHorizontal: 12,
+  paddingVertical: 4,
+  borderRadius: 12,
+  alignSelf: 'flex-start',
+  gap: 6,
+},
+nodeModalStatusDotInline: {
+  width: 8,
+  height: 8,
+  borderRadius: 4,
+},
+nodeModalStatusTextInline: {
+  fontFamily: Fonts.SemiBold,
+  fontSize: 13,
+},
+nodeModalStatsRow: {
+  flexDirection: 'row',
+  justifyContent: 'space-around',
+  marginTop: 4,
+},
+nodeModalStat: {
+  alignItems: 'center',
+},
+nodeModalStatValue: {
+  fontFamily: Fonts.Bold,
+  color: '#1f2937',
+},
+nodeModalStatLabel: {
+  fontFamily: Fonts.Regular,
+  color: '#6b7280',
+  marginTop: 2,
+  fontSize: 10,
+},
+nodeModalDivider: {
+  height: 1,
+  backgroundColor: '#e5e7eb',
+  marginVertical: 12,
+},
+nodeModalSectionTitle: {
+  fontFamily: Fonts.SemiBold,
+  color: '#1f2937',
+  marginBottom: 8,
+},
+  assignCancelButton: {
+    backgroundColor: '#f3f4f6',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  assignConfirmButton: {
+    backgroundColor: '#8b5cf6',
+  },
+  assignCancelText: {
+    fontFamily: Fonts.SemiBold,
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  assignConfirmText: {
+    fontFamily: Fonts.SemiBold,
+    fontSize: 14,
+    color: '#ffffff',
+  },
+  walletStatValue: {
+    fontFamily: Fonts.Bold,
+    color: '#1f2937',
+  },
+  walletStatLabel: {
+    fontFamily: Fonts.Regular,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+  // ============ HIERARCHY STYLES ============
+  hierarchyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  hierarchyCount: {
+    fontFamily: Fonts.Regular,
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  hierarchyLoading: {
+    alignItems: 'center',
+    paddingVertical: 20,
+    gap: 8,
+  },
+  hierarchyLoadingText: {
+    fontFamily: Fonts.Regular,
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  hierarchyContainer: {
+    marginTop: 4,
+  },
+  hierarchyItem: {
+    marginBottom: 4,
+  },
+  hierarchyItemContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    backgroundColor: '#f9fafb',
+    borderRadius: 8,
+    gap: 10,
+  },
+  hierarchyCurrentItem: {
+    backgroundColor: '#fff5eb',
+    borderWidth: 1,
+    borderColor: '#FF7722',
+  },
+  hierarchyDirectChildItem: {
+    backgroundColor: '#f0fdf4',
+  },
+  hierarchyGrandChildItem: {
+    backgroundColor: '#f8fafc',
+  },
+  hierarchyBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    minWidth: 60,
+    alignItems: 'center',
+  },
+  hierarchyLevelText: {
+    fontFamily: Fonts.SemiBold,
+    fontSize: 10,
+  },
+  hierarchyMemberInfo: {
+    flex: 1,
+  },
+  hierarchyMemberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  hierarchyMemberName: {
+    fontFamily: Fonts.SemiBold,
+    fontSize: 13,
+    color: '#1f2937',
+  },
+  hierarchyCurrentMember: {
+    color: '#FF7722',
+    fontFamily: Fonts.Bold,
+  },
+  hierarchyMemberDetails: {
+    fontFamily: Fonts.Regular,
+    fontSize: 10,
+    color: '#6b7280',
+    marginTop: 1,
+  },
+  hierarchyDirectBadge: {
+    backgroundColor: '#10b981',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 8,
+  },
+// ============ HIERARCHY STYLES ============
+hierarchyHeader: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  marginBottom: 8,
+},
+hierarchyCount: {
+  fontFamily: Fonts.Regular,
+  fontSize: 12,
+  color: '#6b7280',
+},
+hierarchyLoading: {
+  alignItems: 'center',
+  paddingVertical: 20,
+  gap: 8,
+},
+hierarchyLoadingText: {
+  fontFamily: Fonts.Regular,
+  fontSize: 12,
+  color: '#6b7280',
+},
+hierarchyContainer: {
+  marginTop: 4,
+},
+hierarchyItem: {
+  marginBottom: 4,
+},
+hierarchyItemContent: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  padding: 10,
+  backgroundColor: '#f9fafb',
+  borderRadius: 8,
+  gap: 10,
+},
+hierarchyCurrentItem: {
+  backgroundColor: '#fff5eb',
+  borderWidth: 1,
+  borderColor: '#FF7722',
+},
+hierarchyDirectChildItem: {
+  backgroundColor: '#f0fdf4',
+},
+hierarchyGrandChildItem: {
+  backgroundColor: '#f8fafc',
+},
+hierarchyBadge: {
+  paddingHorizontal: 8,
+  paddingVertical: 4,
+  borderRadius: 12,
+  minWidth: 60,
+  alignItems: 'center',
+},
+hierarchyLevelText: {
+  fontFamily: Fonts.SemiBold,
+  fontSize: 10,
+},
+hierarchyMemberInfo: {
+  flex: 1,
+},
+hierarchyMemberRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 6,
+  flexWrap: 'wrap',
+},
+hierarchyMemberName: {
+  fontFamily: Fonts.SemiBold,
+  fontSize: 13,
+  color: '#1f2937',
+},
+hierarchyCurrentMember: {
+  color: '#FF7722',
+  fontFamily: Fonts.Bold,
+},
+hierarchyMemberDetails: {
+  fontFamily: Fonts.Regular,
+  fontSize: 10,
+  color: '#6b7280',
+  marginTop: 1,
+},
+hierarchyDirectBadge: {
+  backgroundColor: '#10b981',
+  paddingHorizontal: 6,
+  paddingVertical: 1,
+  borderRadius: 8,
+},
+hierarchyDirectBadgeText: {
+  fontFamily: Fonts.SemiBold,
+  fontSize: 8,
+  color: '#ffffff',
+},
+hierarchyIndirectBadge: {
+  backgroundColor: '#94a3b8',
+  paddingHorizontal: 6,
+  paddingVertical: 1,
+  borderRadius: 8,
+},
+hierarchyIndirectBadgeText: {
+  fontFamily: Fonts.SemiBold,
+  fontSize: 8,
+  color: '#ffffff',
+},
+hierarchyChildBadge: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: '#8b5cf615',
+  paddingHorizontal: 4,
+  paddingVertical: 1,
+  borderRadius: 8,
+  gap: 2,
+},
+hierarchyChildBadgeText: {
+  fontFamily: Fonts.SemiBold,
+  fontSize: 8,
+  color: '#8b5cf6',
+},
+hierarchyStatusBadge: {
+  paddingHorizontal: 6,
+  paddingVertical: 2,
+  borderRadius: 10,
+},
+hierarchyStatusText: {
+  fontFamily: Fonts.SemiBold,
+  fontSize: 9,
+},
+hierarchyConnector: {
+  alignItems: 'center',
+  paddingVertical: 2,
+  marginLeft: 10,
+},
+hierarchyLine: {
+  width: 1,
+  height: 4,
+  backgroundColor: '#d1d5db',
+},
+hierarchyDot: {
+  width: 4,
+  height: 4,
+  borderRadius: 2,
+  backgroundColor: '#9ca3af',
+},
+hierarchySummary: {
+  marginTop: 8,
+  padding: 8,
+  backgroundColor: '#f3f4f6',
+  borderRadius: 8,
+  alignItems: 'center',
+},
+hierarchySummaryText: {
+  fontFamily: Fonts.Regular,
+  fontSize: 12,
+  color: '#6b7280',
+},
+hierarchyEmptyState: {
+  alignItems: 'center',
+  paddingVertical: 20,
+  gap: 4,
+},
+hierarchyEmptySubtext: {
+  fontFamily: Fonts.Regular,
+  fontSize: 11,
+  color: '#9ca3af',
+},
+  hierarchyDirectBadgeText: {
+    fontFamily: Fonts.SemiBold,
+    fontSize: 8,
+    color: '#ffffff',
+  },
+  hierarchyIndirectBadge: {
+    backgroundColor: '#94a3b8',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 8,
+  },
+  hierarchyIndirectBadgeText: {
+    fontFamily: Fonts.SemiBold,
+    fontSize: 8,
+    color: '#ffffff',
+  },
+  hierarchyStatusBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  hierarchyStatusText: {
+    fontFamily: Fonts.SemiBold,
+    fontSize: 9,
+  },
+  hierarchyConnector: {
+    alignItems: 'center',
+    paddingVertical: 2,
+    marginLeft: 10,
+  },
+  hierarchyLine: {
+    width: 1,
+    height: 4,
+    backgroundColor: '#d1d5db',
+  },
+  hierarchyDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#9ca3af',
+  },
+  hierarchySummary: {
+    marginTop: 8,
+    padding: 8,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  hierarchySummaryText: {
+    fontFamily: Fonts.Regular,
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  hierarchyEmptyState: {
+    alignItems: 'center',
+    paddingVertical: 20,
+    gap: 4,
+  },
+  hierarchyEmptySubtext: {
+    fontFamily: Fonts.Regular,
+    fontSize: 11,
+    color: '#9ca3af',
+  },
+  formSection: {
+    marginBottom: 16,
+  },
+  formSectionTitle: {
+    fontFamily: Fonts.SemiBold,
+    color: '#1f2937',
+    marginBottom: 8,
+  },
+  formRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  levelOptionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  levelOptionSubText: {
+    fontFamily: Fonts.Regular,
+    color: '#6b7280',
+  },
+  referralRegenerateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#8b5cf6',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    gap: 6,
+    marginTop: 8,
+    width: '100%',
+  },
+// ============ HIERARCHY NODE STYLES (SAME AS DASHBOARD) ============
+hierarchyNodeCard: {
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  backgroundColor: '#f9fafb',
+  borderRadius: 10,
+  padding: 12,
+  width: '100%',
+  borderWidth: 1,
+  borderColor: '#e5e7eb',
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 1 },
+  shadowOpacity: 0.05,
+  shadowRadius: 2,
+  elevation: 1,
+  minHeight: 60,
+},
+// ============ DIRECT MEMBERS STYLES ============
+directMemberRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: '#f9fafb',
+  padding: 12,
+  borderRadius: 10,
+  borderWidth: 1,
+  borderColor: '#f3f4f6',
+},
+directMemberAvatar: {
+  width: 40,
+  height: 40,
+  borderRadius: 20,
+  backgroundColor: '#8b5cf615',
+  justifyContent: 'center',
+  alignItems: 'center',
+  marginRight: 12,
+},
+directMemberAvatarText: {
+  fontFamily: Fonts.Bold,
+  fontSize: 16,
+  color: '#8b5cf6',
+},
+directMemberInfo: {
+  flex: 1,
+},
+directMemberName: {
+  fontFamily: Fonts.SemiBold,
+  color: '#1f2937',
+},
+directMemberDetails: {
+  fontFamily: Fonts.Regular,
+  color: '#6b7280',
+  marginTop: 1,
+},
+directMemberMeta: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 6,
+  marginTop: 2,
+},
+directMemberStatus: {
+  paddingHorizontal: 8,
+  paddingVertical: 2,
+  borderRadius: 8,
+},
+directMemberStatusText: {
+  fontFamily: Fonts.SemiBold,
+  fontSize: 10,
+},
+directMemberLevel: {
+  fontFamily: Fonts.Regular,
+  fontSize: 10,
+  color: '#6b7280',
+  backgroundColor: '#f3f4f6',
+  paddingHorizontal: 6,
+  paddingVertical: 1,
+  borderRadius: 4,
+},
+hierarchyNodeCurrent: {
+  backgroundColor: '#fff5eb',
+  borderColor: '#FF7722',
+  borderWidth: 2,
+},
+hierarchyNodeDirect: {
+  backgroundColor: '#f0fdf4',
+  borderLeftWidth: 3,
+  borderLeftColor: '#10b981',
+},
+hierarchyNodeGrandChild: {
+  backgroundColor: '#f8fafc',
+  borderLeftWidth: 3,
+  borderLeftColor: '#94a3b8',
+  marginLeft: 10,
+},
+
+// Level Badge
+hierarchyNodeLevelBadge: {
+  paddingHorizontal: 8,
+  paddingVertical: 3,
+  borderRadius: 10,
+  minWidth: 45,
+  alignItems: 'center',
+},
+hierarchyNodeLevelText: {
+  fontFamily: Fonts.SemiBold,
+  fontSize: 9,
+},
+
+// Avatar
+hierarchyNodeAvatar: {
+  width: 34,
+  height: 34,
+  borderRadius: 17,
+  justifyContent: 'center',
+  alignItems: 'center',
+  borderWidth: 1,
+  borderColor: '#e5e7eb',
+},
+hierarchyNodeAvatarText: {
+  fontFamily: Fonts.Bold,
+  fontSize: 14,
+},
+
+// Info
+hierarchyNodeInfo: {
+  flex: 1,
+  marginLeft: 8,
+},
+hierarchyNodeNameRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 4,
+  flexWrap: 'wrap',
+},
+hierarchyNodeName: {
+  fontFamily: Fonts.SemiBold,
+  fontSize: 13,
+  color: '#1f2937',
+},
+hierarchyNodeNameCurrent: {
+  color: '#FF7722',
+  fontFamily: Fonts.Bold,
+},
+hierarchyNodeDirectBadge: {
+  backgroundColor: '#10b981',
+  paddingHorizontal: 6,
+  paddingVertical: 1,
+  borderRadius: 6,
+},
+hierarchyNodeDirectBadgeText: {
+  fontFamily: Fonts.SemiBold,
+  fontSize: 7,
+  color: '#ffffff',
+},
+hierarchyNodeIndirectBadge: {
+  backgroundColor: '#94a3b8',
+  paddingHorizontal: 6,
+  paddingVertical: 1,
+  borderRadius: 6,
+},
+hierarchyNodeIndirectBadgeText: {
+  fontFamily: Fonts.SemiBold,
+  fontSize: 7,
+  color: '#ffffff',
+},
+
+// Meta
+hierarchyNodeMeta: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  flexWrap: 'wrap',
+  gap: 4,
+  marginTop: 1,
+},
+hierarchyNodeLevel: {
+  fontFamily: Fonts.Regular,
+  fontSize: 9,
+  color: '#6b7280',
+},
+hierarchyNodeChildCount: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: '#8b5cf615',
+  paddingHorizontal: 4,
+  paddingVertical: 1,
+  borderRadius: 8,
+  gap: 2,
+},
+hierarchyNodeChildCountText: {
+  fontFamily: Fonts.SemiBold,
+  fontSize: 8,
+  color: '#8b5cf6',
+},
+
+// Status
+hierarchyNodeStatus: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  paddingHorizontal: 6,
+  paddingVertical: 2,
+  borderRadius: 8,
+  gap: 3,
+},
+hierarchyNodeStatusDot: {
+  width: 5,
+  height: 5,
+  borderRadius: 2.5,
+},
+hierarchyNodeStatusText: {
+  fontFamily: Fonts.SemiBold,
+  fontSize: 8,
+},
+
+// Connectors
+hierarchyConnector: {
+  alignItems: 'center',
+  paddingVertical: 2,
+  marginLeft: 10,
+},
+hierarchyConnectorLine: {
+  width: 1,
+  height: 6,
+  backgroundColor: '#d1d5db',
+},
+hierarchyConnectorDot: {
+  width: 4,
+  height: 4,
+  borderRadius: 2,
+  backgroundColor: '#9ca3af',
+},
+// ============ NODE MEMBERS MODAL STYLES ============
+nodeMembersModalContent: {
+  backgroundColor: '#ffffff',
+  borderRadius: 16,
+  padding: 20,
+  paddingBottom: 40,
+  maxHeight: '90%',
+  minHeight: 300,
+},
+nodeMembersModalSubtitle: {
+  fontFamily: Fonts.Regular,
+  color: '#6b7280',
+  marginTop: 2,
+},
+nodeMembersLoading: {
+  paddingVertical: 40,
+  alignItems: 'center',
+},
+nodeMembersLoadingText: {
+  fontFamily: Fonts.Regular,
+  color: '#6b7280',
+  marginTop: 8,
+},
+nodeMembersEmpty: {
+  paddingVertical: 40,
+  alignItems: 'center',
+},
+nodeMembersEmptyTitle: {
+  fontFamily: Fonts.SemiBold,
+  color: '#1f2937',
+  marginTop: 8,
+},
+nodeMembersEmptySubtext: {
+  fontFamily: Fonts.Regular,
+  color: '#9ca3af',
+  marginTop: 4,
+  textAlign: 'center',
+},
+nodeMembersList: {
+  paddingBottom: 8,
+},
+
+// Member Item in Modal
+nodeMemberItem: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: '#f9fafb',
+  padding: 12,
+  borderRadius: 10,
+  marginBottom: 8,
+  borderWidth: 1,
+  borderColor: '#f3f4f6',
+},
+nodeMemberAvatar: {
+  width: 40,
+  height: 40,
+  borderRadius: 20,
+  backgroundColor: '#8b5cf615',
+  justifyContent: 'center',
+  alignItems: 'center',
+  marginRight: 12,
+},
+nodeMemberAvatarText: {
+  fontFamily: Fonts.Bold,
+  fontSize: 16,
+  color: '#8b5cf6',
+},
+nodeMemberInfo: {
+  flex: 1,
+},
+nodeMemberName: {
+  fontFamily: Fonts.SemiBold,
+  color: '#1f2937',
+},
+nodeMemberDetails: {
+  fontFamily: Fonts.Regular,
+  color: '#6b7280',
+  marginTop: 1,
+},
+nodeMemberMeta: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 6,
+  marginTop: 2,
+},
+nodeMemberStatus: {
+  paddingHorizontal: 8,
+  paddingVertical: 2,
+  borderRadius: 8,
+},
+nodeMemberStatusText: {
+  fontFamily: Fonts.SemiBold,
+  fontSize: 10,
+},
+nodeMemberLevel: {
+  fontFamily: Fonts.Regular,
+  color: '#6b7280',
+},
+
+// Hierarchy Tap Hint
+hierarchyTapHint: {
+  fontFamily: Fonts.Regular,
+  fontSize: 8,
+  color: '#9ca3af',
+  marginTop: 1,
+},
+
+// Direct Member Badge in Hierarchy
+hierarchyDirectMemberBadge: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: '#fef3c7',
+  paddingHorizontal: 4,
+  paddingVertical: 1,
+  borderRadius: 8,
+  gap: 2,
+},
+hierarchyDirectMemberBadgeText: {
+  fontFamily: Fonts.SemiBold,
+  fontSize: 8,
+  color: '#f59e0b',
+},
+// Override existing hierarchy styles
+hierarchyItem: {
+  marginBottom: 4,
+  width: '100%',
+},
+hierarchyContainer: {
+  marginTop: 4,
+  width: '100%',
+},
+  hierarchyEmptySubtext: {
+    fontFamily: Fonts.Regular,
+    fontSize: 11,
+    color: '#9ca3af',
+  },
+
+  // ============ UPLINE ============
+  uplineRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#fffbeb', borderRadius: 10, padding: 10,
+    marginBottom: 6, borderWidth: 1, borderColor: '#fde68a',
+  },
+  uplineIndexBadge: {
+    width: 20, height: 20, borderRadius: 10, backgroundColor: '#f59e0b',
+    justifyContent: 'center', alignItems: 'center', marginRight: 8,
+  },
+  uplineIndexText: { fontFamily: Fonts.Bold, fontSize: 10, color: '#ffffff' },
+  uplineAvatar: {
+    width: 32, height: 32, borderRadius: 16, backgroundColor: '#fef3c7',
+    justifyContent: 'center', alignItems: 'center', marginRight: 8,
+  },
+  uplineAvatarText: { fontFamily: Fonts.Bold, fontSize: 13, color: '#f59e0b' },
+  uplineName: { fontFamily: Fonts.SemiBold, fontSize: 13, color: '#1f2937' },
+  uplineMeta: { fontFamily: Fonts.Regular, fontSize: 10, color: '#92400e' },
+
+  // ============ TREE NODE ============
+  treeNodeCard: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#ffffff', borderRadius: 10, padding: 10,
+    borderWidth: 1, borderColor: '#e5e7eb',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05, shadowRadius: 2, elevation: 1,
+    minHeight: 56,
+  },
+  treeNodeRoot: { backgroundColor: '#fff7ed', borderColor: '#fed7aa', borderWidth: 2 },
+  treeNodeDirect: { backgroundColor: '#f0fdf4' },
+  treeNodeLevelBadge: {
+    paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8,
+    minWidth: 40, alignItems: 'center',
+  },
+  treeNodeLevelText: { fontFamily: Fonts.SemiBold, fontSize: 8 },
+  treeNodeAvatar: {
+    width: 32, height: 32, borderRadius: 16,
+    justifyContent: 'center', alignItems: 'center', marginLeft: 6,
+  },
+  treeNodeAvatarText: { fontFamily: Fonts.Bold, fontSize: 13 },
+  treeNodeName: { fontFamily: Fonts.SemiBold, fontSize: 12, color: '#1f2937' },
+  treeNodeNameRoot: { color: '#FF7722', fontSize: 13 },
+  treeNodeMeta: { fontFamily: Fonts.Regular, fontSize: 10, color: '#6b7280', marginTop: 2 },
+  treeNodeRootBadge: {
+    backgroundColor: '#FF7722', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 6,
+  },
+  treeNodeRootBadgeText: { fontFamily: Fonts.SemiBold, fontSize: 7, color: '#ffffff' },
+  treeNodeDirectBadge: {
+    backgroundColor: '#10b981', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 6,
+  },
+  treeNodeDirectBadgeText: { fontFamily: Fonts.SemiBold, fontSize: 7, color: '#ffffff' },
+  treeNodeRegBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    backgroundColor: '#fef3c7', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 6,
+  },
+  treeNodeRegBadgeText: { fontFamily: Fonts.SemiBold, fontSize: 8, color: '#f59e0b' },
+  treeNodeChildBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    backgroundColor: '#ede9fe', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 6,
+  },
+  treeNodeChildBadgeText: { fontFamily: Fonts.SemiBold, fontSize: 8, color: '#8b5cf6' },
+  treeNodeStatus: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
+
+  // ============ NODE DETAIL MODAL ============
+  nodeDetailModalContent: {
+    backgroundColor: '#ffffff', borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingHorizontal: 20, paddingTop: 16, paddingBottom: 16,
+    maxHeight: '90%', flex: 1,
+  },
+  nodeDetailHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingBottom: 12, marginBottom: 8,
+    borderBottomWidth: 1, borderBottomColor: '#f3f4f6',
+  },
+  nodeDetailAvatar: {
+    width: 52, height: 52, borderRadius: 26,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  nodeDetailAvatarText: { fontFamily: Fonts.Bold, fontSize: 20 },
+  nodeDetailName: { fontFamily: Fonts.Bold, fontSize: 16, color: '#1f2937' },
+  nodeDetailLevelBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10,
+  },
+  nodeDetailLevelText: { fontFamily: Fonts.SemiBold, fontSize: 10 },
+  nodeDetailStatusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
+  nodeDetailSectionTitle: {
+    fontFamily: Fonts.SemiBold, fontSize: 13, color: '#1f2937',
+    marginTop: 14, marginBottom: 8,
+  },
+  nodeDetailCommissionRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  nodeDetailCommissionCard: {
+    flex: 1, backgroundColor: '#f9fafb', borderRadius: 10,
+    padding: 10, borderWidth: 1, borderColor: '#f3f4f6',
+  },
+  nodeDetailCommissionLabel: { fontFamily: Fonts.Regular, fontSize: 10, color: '#6b7280', marginBottom: 2 },
+  nodeDetailCommissionValue: { fontFamily: Fonts.Bold, fontSize: 15 },
+  nodeDetailInfoCard: {
+    backgroundColor: '#f9fafb', borderRadius: 10, padding: 10,
+    borderWidth: 1, borderColor: '#f3f4f6',
+  },
+  nodeDetailUplineRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#fffbeb', borderRadius: 8, padding: 8,
+    marginBottom: 6, gap: 8,
+  },
+  nodeDetailUplineIndex: {
+    fontFamily: Fonts.Bold, fontSize: 11, color: '#f59e0b',
+    width: 18, textAlign: 'center',
+  },
+  nodeDetailUplineName: { fontFamily: Fonts.SemiBold, fontSize: 12, color: '#1f2937' },
+  nodeDetailUplineMeta: { fontFamily: Fonts.Regular, fontSize: 10, color: '#92400e' },
+  nodeDetailSearchBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#f9fafb', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 7,
+    marginBottom: 8, borderWidth: 1, borderColor: '#e5e7eb',
+  },
+  nodeDetailSearchInput: {
+    flex: 1, fontFamily: Fonts.Regular, fontSize: 12, color: '#1f2937', paddingVertical: 0,
+  },
+  nodeDetailRegRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#f9fafb', borderRadius: 10, padding: 10,
+    marginBottom: 6, borderWidth: 1, borderColor: '#f3f4f6',
+  },
+  nodeDetailRegAvatar: {
+    width: 32, height: 32, borderRadius: 16, backgroundColor: '#8b5cf615',
+    justifyContent: 'center', alignItems: 'center', marginRight: 10,
+  },
+  nodeDetailRegAvatarText: { fontFamily: Fonts.Bold, fontSize: 13, color: '#8b5cf6' },
+  nodeDetailRegName: { fontFamily: Fonts.SemiBold, fontSize: 12, color: '#1f2937' },
+  nodeDetailRegMeta: { fontFamily: Fonts.Regular, fontSize: 10, color: '#6b7280' },
+  nodeDetailRegBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8 },
+  nodeDetailCloseBtn: {
+    backgroundColor: '#f3f4f6', paddingVertical: 12, borderRadius: 8,
+    alignItems: 'center', marginTop: 10,
+  },
+  nodeDetailCloseBtnText: { fontFamily: Fonts.SemiBold, fontSize: 14, color: '#6b7280' }
+});

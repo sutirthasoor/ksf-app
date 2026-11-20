@@ -1,0 +1,45 @@
+{
+  "expo": {
+    "name": "Kabir Sat Dharm Foundation",
+    "slug": "kabir-sat-dharm-foundation",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#f8fafc",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.callhubpro567567567.KSDF",
+      "buildNumber": "1.0.0"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#E6F4FE"
+      },
+      "package": "com.callhubpro567567567.KSDF",
+      "versionCode": 1
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-sharing",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "resizeMode": "cover",
+          "backgroundColor": "#ffffff"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "223ed2fe-1205-4393-906c-848736269b24"
+      },
+      "API_URL": "https://ngo-backend-production-25df.up.railway.app"
+    },
+    "scheme": "ksdf"
+  }
+}
