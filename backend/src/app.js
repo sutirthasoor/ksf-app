@@ -70,17 +70,25 @@ function createApp({ cfg, cf, store, verifyIdToken }) {
     res.status(200).send('ok');
   }));
 
-  app.post('/api/cashfree/payout-webhook', express.raw({ type: '*/*', limit: '1mb' }), wrap(async (req, res) => {
-    const secret = cfg.payoutWebhookSecret || cfg.payoutClientSecret;
-    const ok = cf.verifyWebhookSignature(secret, req.body, req.headers['x-webhook-signature'], req.headers['x-webhook-timestamp']);
-    if (!ok) return res.status(401).send('bad signature');
-    let body; try { body = JSON.parse(req.body.toString('utf8')); } catch { return res.status(400).send('bad json'); }
-    const wid = P.withdrawalIdFromTransferId(P.transferIdFromWebhook(body));
-    if (wid && (await store.getWithdrawal(wid))) {
-      await P.syncWithdrawal({ store, cf, withdrawalId: wid }); // re-reads status from Cashfree
+  // Payout webhook: ALWAYS acknowledge with 200 (Cashfree's "Test & Add" ping and retries need it).
+  // Nothing in the payload is trusted: we only extract the transfer id and re-read the real status
+  // from Cashfree, which is idempotent, so an unsigned/forged call can at worst trigger a harmless re-check.
+  app.post('/api/cashfree/payout-webhook', limit(120, 60 * 1000), express.raw({ type: '*/*', limit: '1mb' }), async (req, res) => {
+    try {
+      const secret = cfg.payoutWebhookSecret || cfg.payoutClientSecret;
+      const signed = cf.verifyWebhookSignature(secret, req.body, req.headers['x-webhook-signature'], req.headers['x-webhook-timestamp']);
+      if (!signed) console.warn('[payout-webhook] signature not verified (processing via re-fetch only)');
+      let body = {};
+      try { body = JSON.parse(Buffer.isBuffer(req.body) ? req.body.toString('utf8') : '{}'); } catch { /* ping / non-JSON */ }
+      const wid = P.withdrawalIdFromTransferId(P.transferIdFromWebhook(body));
+      if (wid && (await store.getWithdrawal(wid))) {
+        await P.syncWithdrawal({ store, cf, withdrawalId: wid });
+      }
+    } catch (e) {
+      console.error('[payout-webhook]', e.message);
     }
     res.status(200).send('ok');
-  }));
+  });
 
   app.use(express.json({ limit: '100kb' }));
   app.get('/health', (_req, res) => res.json({ ok: true, env: cfg.env }));

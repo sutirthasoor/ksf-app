@@ -5,10 +5,12 @@
   "description": "Cashfree PG + Payouts backend for the NGO app",
   "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js",
+    "start": "node init && node src/server.js",
     "test": "node --test test/backend.test.js"
   },
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.19.2",
